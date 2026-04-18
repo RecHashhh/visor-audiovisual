@@ -5,8 +5,8 @@ import { PublicClientApplication } from '@azure/msal-browser'
 
 const cfg = (typeof window !== 'undefined' && window.__APP_CONFIG__) ? window.__APP_CONFIG__ : {}
 
-const TENANT_ID = cfg.tenantId || import.meta.env.VITE_TENANT_ID || ''
-const CLIENT_ID = cfg.clientId || import.meta.env.VITE_CLIENT_ID || ''
+const TENANT_ID = cfg.tenantId || import.meta.env.VITE_TENANT_ID || '12f2a4b5-4935-464d-9dae-e0525d0c593f'
+const CLIENT_ID = cfg.clientId || import.meta.env.VITE_CLIENT_ID || 'a4413b75-4069-48e0-b055-55dce319dfbc'
 const SCOPE_URI  = cfg.scopeUri || import.meta.env.VITE_SCOPE_URI  || ''
 
 if (!TENANT_ID || !CLIENT_ID) {
@@ -15,8 +15,8 @@ if (!TENANT_ID || !CLIENT_ID) {
 
 export const msalConfig = {
   auth: {
-    clientId:              `a4413b75-4069-48e0-b055-55dce319dfbc`,
-    authority:             `https://login.microsoftonline.com/${12f2a4b5-4935-464d-9dae-e0525d0c593f}`,
+    clientId:              CLIENT_ID,
+    authority:             `https://login.microsoftonline.com/${TENANT_ID}`,
     redirectUri:           window.location.origin,
     postLogoutRedirectUri: window.location.origin,
   },
