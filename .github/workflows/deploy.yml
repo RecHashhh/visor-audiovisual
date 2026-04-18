@@ -1,0 +1,57 @@
+name: Deploy Visor Audiovisual
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+    branches: [main]
+
+jobs:
+  build_and_deploy:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.action != 'closed')
+    runs-on: ubuntu-latest
+    name: Build and Deploy
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # ── PASO CLAVE: inyectar valores reales en index.html ANTES del build ──
+      - name: Inject config into index.html
+        run: |
+          sed -i "s|__VITE_TENANT_ID__|${{ secrets.VITE_TENANT_ID }}|g" frontend/index.html
+          sed -i "s|__VITE_CLIENT_ID__|${{ secrets.VITE_CLIENT_ID }}|g" frontend/index.html
+          sed -i "s|__VITE_SCOPE_URI__|${{ secrets.VITE_SCOPE_URI }}|g" frontend/index.html
+
+      - name: Install and build frontend
+        working-directory: frontend
+        run: |
+          npm install
+          npm run build
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: upload
+          app_location: /frontend
+          api_location: /backend
+          output_location: dist
+          skip_app_build: true   # ya construimos manualmente arriba
+
+  close_pull_request:
+    if: github.event_name == 'pull_request' && github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    name: Close PR
+    steps:
+      - name: Close Pull Request
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_API_TOKEN }}
+          action: close

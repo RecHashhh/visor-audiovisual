@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Visor Audiovisual</title>
+    <!-- 
+      __APP_CONFIG__ se reemplaza en el build por el workflow de GitHub Actions.
+      En desarrollo local, las variables vienen de .env.local
+    -->
+    <script>
+      window.__APP_CONFIG__ = {
+        tenantId: "__VITE_TENANT_ID__",
+        clientId: "__VITE_CLIENT_ID__",
+        scopeUri: "__VITE_SCOPE_URI__"
+      }
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet">
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></script>
+  </body>
+</html>
