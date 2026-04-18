@@ -35,9 +35,9 @@ app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
 # ── CONFIG ────────────────────────────────────────────────────────────
 CONN_STR        = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
-ACCOUNT_NAME    = os.environ.get("AZURE_STORAGE_ACCOUNT", "staudivisualproyectos")
+ACCOUNT_NAME    = os.environ.get("AZURE_STORAGE_ACCOUNT", "ripconaudiovisual")
 ACCOUNT_KEY     = os.environ.get("AZURE_STORAGE_KEY", "")          # Necesario para SAS
-CONTAINER       = os.environ.get("CONTAINER_NAME", "audiovisual")
+CONTAINER       = os.environ.get("CONTAINE_NAME", "audiovisual")
 TENANT_ID       = os.environ.get("TENANT_ID", "")
 CLIENT_ID       = os.environ.get("CLIENT_ID", "")
 SHARE_SECRET    = os.environ.get("SHARE_SECRET", "cambiar-este-secreto-en-produccion")
