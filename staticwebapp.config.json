@@ -2,10 +2,6 @@
   "routes": [
     {
       "route": "/api/*",
-      "allowedRoles": ["authenticated", "anonymous"]
-    },
-    {
-      "route": "/share/*",
       "allowedRoles": ["anonymous"]
     },
     {
@@ -15,12 +11,30 @@
   ],
   "navigationFallback": {
     "rewrite": "/index.html",
-    "exclude": ["/api/*", "*.{css,js,png,ico,svg,woff2}"]
+    "exclude": [
+      "/api/*",
+      "/assets/*",
+      "*.css",
+      "*.js",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.ico",
+      "*.svg",
+      "*.woff",
+      "*.woff2",
+      "*.map"
+    ]
+  },
+  "responseOverrides": {
+    "404": {
+      "rewrite": "/index.html",
+      "statusCode": 200
+    }
   },
   "globalHeaders": {
     "X-Content-Type-Options": "nosniff",
-    "X-Frame-Options": "SAMEORIGIN",
-    "Referrer-Policy": "strict-origin-when-cross-origin"
+    "X-Frame-Options": "SAMEORIGIN"
   },
   "mimeTypes": {
     ".json": "application/json"
