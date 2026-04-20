@@ -95,10 +95,13 @@ export default function GalleryPage() {
   const [sasCache, setSasCache] = useState({})
   const [thumbCache, setThumbCache] = useState({})
   const thumbObjectUrlsRef = useRef(new Set())
+  const closeTimerRef = useRef(null)
   const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('all')
   const [sizeFilter, setSizeFilter] = useState('all')
   const [viewer, setViewer] = useState(null)  // { idx, url, file, kind, width, height, metaLoading }
+  const [previewOpen, setPreviewOpen] = useState(false)
+  const [fullscreenViewer, setFullscreenViewer] = useState(null)
   const [shareLink, setShareLink] = useState(null)
   const [sharingDays, setSharingDays] = useState(7)
   const [showSharePanel, setShowSharePanel] = useState(false)
@@ -112,6 +115,9 @@ export default function GalleryPage() {
 
   useEffect(() => {
     return () => {
+      if (closeTimerRef.current) {
+        clearTimeout(closeTimerRef.current)
+      }
       thumbObjectUrlsRef.current.forEach((url) => {
         try {
           URL.revokeObjectURL(url)
@@ -134,7 +140,13 @@ export default function GalleryPage() {
     const kind = kindOf(file.name)
     const requiresUrl = kind === 'img' || kind === 'vid'
     const url = requiresUrl ? await getSas(file.path) : null
+    setFullscreenViewer(null)
+    if (closeTimerRef.current) {
+      clearTimeout(closeTimerRef.current)
+      closeTimerRef.current = null
+    }
     setViewer({ idx, url, file, kind, width: null, height: null, metaLoading: kind === 'img' || kind === 'vid' })
+    setPreviewOpen(true)
 
     if (kind !== 'img' && kind !== 'vid') return
 
@@ -162,6 +174,16 @@ export default function GalleryPage() {
     if (!next) return
     const realIdx = displayFiles.indexOf(next)
     await openViewer(next, realIdx)
+  }
+
+  const closeViewer = () => {
+    setFullscreenViewer(null)
+    setPreviewOpen(false)
+    if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    closeTimerRef.current = setTimeout(() => {
+      setViewer(null)
+      closeTimerRef.current = null
+    }, 180)
   }
 
   const download = async (file) => {
@@ -211,11 +233,20 @@ export default function GalleryPage() {
       if (!viewer) return
       if (e.key === 'ArrowRight') navViewer(1)
       if (e.key === 'ArrowLeft')  navViewer(-1)
-      if (e.key === 'Escape')     setViewer(null)
+      if (e.key === 'Escape')     closeViewer()
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
   }, [viewer, displayFiles])
+
+  useEffect(() => {
+    const handler = (e) => {
+      if (!fullscreenViewer) return
+      if (e.key === 'Escape') setFullscreenViewer(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [fullscreenViewer])
 
   return (
     <>
@@ -269,109 +300,147 @@ export default function GalleryPage() {
       {loading && <div className="loading"><div className="spinner"/></div>}
 
       {!loading && (
-        <>
-          {/* Filters */}
-          <div className="gallery-toolbar">
-            <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
-              Todos ({files.length})
-            </button>
-            {prefixes.map(p => (
-              <button key={p} className={`filter-chip ${filter === p ? 'active' : ''}`} onClick={() => setFilter(p)}>
-                {p} ({files.filter(f => prefixOf(f.name) === p).length})
+        <div className={`gallery-split ${viewer ? 'has-preview' : 'no-preview'}`}>
+          <div className="gallery-main">
+            {/* Filters */}
+            <div className="gallery-toolbar">
+              <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+                Todos ({files.length})
               </button>
-            ))}
-          </div>
-
-          <div className="gallery-toolbar" style={{ marginTop: 8 }}>
-            <button className={`filter-chip ${sizeFilter === 'all' ? 'active' : ''}`} onClick={() => setSizeFilter('all')}>
-              Cualquier tamaño ({files.length})
-            </button>
-            <button className={`filter-chip ${sizeFilter === 'small' ? 'active' : ''}`} onClick={() => setSizeFilter('small')}>
-              Pequeño ({sizeCounts.small})
-            </button>
-            <button className={`filter-chip ${sizeFilter === 'medium' ? 'active' : ''}`} onClick={() => setSizeFilter('medium')}>
-              Mediano ({sizeCounts.medium})
-            </button>
-            <button className={`filter-chip ${sizeFilter === 'large' ? 'active' : ''}`} onClick={() => setSizeFilter('large')}>
-              Grande ({sizeCounts.large})
-            </button>
-          </div>
-
-          {/* Gallery grid */}
-          <div className="gallery-grid">
-            {displayFiles.map((file, idx) => (
-              <GalleryItem
-                key={file.name}
-                file={file}
-                thumbUrl={thumbCache[file.path] || null}
-                onThumbLoaded={(url) => {
-                  thumbObjectUrlsRef.current.add(url)
-                  setThumbCache((c) => (c[file.path] ? c : { ...c, [file.path]: url }))
-                }}
-                getSas={getSas}
-                onClick={() => openItem(file, idx)}
-              />
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Viewer */}
-      {viewer && (
-        <div className="lightbox-overlay" onClick={e => e.target.className === 'lightbox-overlay' && setViewer(null)}>
-          <button className="lightbox-close" onClick={() => setViewer(null)}>✕</button>
-          <button className="lightbox-nav prev" onClick={() => navViewer(-1)}>‹</button>
-          <button className="lightbox-nav next" onClick={() => navViewer(1)}>›</button>
-
-          {viewer.kind === 'img' && (
-            <img className="lightbox-img" src={viewer.url} alt={viewer.file?.name || 'preview'} />
-          )}
-
-          {viewer.kind === 'vid' && (
-            <div className="lightbox-media-wrap">
-              <video className="lightbox-video" controls autoPlay src={viewer.url}>Tu navegador no soporta video.</video>
+              {prefixes.map(p => (
+                <button key={p} className={`filter-chip ${filter === p ? 'active' : ''}`} onClick={() => setFilter(p)}>
+                  {p} ({files.filter(f => prefixOf(f.name) === p).length})
+                </button>
+              ))}
             </div>
+
+            <div className="gallery-toolbar" style={{ marginTop: 8 }}>
+              <button className={`filter-chip ${sizeFilter === 'all' ? 'active' : ''}`} onClick={() => setSizeFilter('all')}>
+                Cualquier tamaño ({files.length})
+              </button>
+              <button className={`filter-chip ${sizeFilter === 'small' ? 'active' : ''}`} onClick={() => setSizeFilter('small')}>
+                Pequeño ({sizeCounts.small})
+              </button>
+              <button className={`filter-chip ${sizeFilter === 'medium' ? 'active' : ''}`} onClick={() => setSizeFilter('medium')}>
+                Mediano ({sizeCounts.medium})
+              </button>
+              <button className={`filter-chip ${sizeFilter === 'large' ? 'active' : ''}`} onClick={() => setSizeFilter('large')}>
+                Grande ({sizeCounts.large})
+              </button>
+            </div>
+
+            {/* Gallery grid */}
+            <div className="gallery-grid">
+              {displayFiles.map((file, idx) => (
+                <GalleryItem
+                  key={file.name}
+                  file={file}
+                  thumbUrl={thumbCache[file.path] || null}
+                  onThumbLoaded={(url) => {
+                    thumbObjectUrlsRef.current.add(url)
+                    setThumbCache((c) => (c[file.path] ? c : { ...c, [file.path]: url }))
+                  }}
+                  getSas={getSas}
+                  onClick={() => openItem(file, idx)}
+                  active={viewer?.file?.name === file.name}
+                />
+              ))}
+            </div>
+          </div>
+
+          {viewer && (
+            <aside className={`gallery-preview ${previewOpen ? 'open' : 'closing'}`}>
+              <div className="gallery-preview-header">
+                <div className="gallery-preview-titleWrap">
+                  <div className="gallery-preview-title">{viewer.file?.name || 'Sin nombre'}</div>
+                  <div className="gallery-preview-subtitle">Vista previa dentro de la página</div>
+                </div>
+                <button className="btn btn-ghost btn-sm" onClick={closeViewer}>Cerrar</button>
+              </div>
+
+              <div className="gallery-preview-media" onClick={() => viewer.kind === 'img' && setFullscreenViewer(viewer)}>
+                {viewer.kind === 'img' && (
+                  <img className="gallery-preview-img" src={viewer.url} alt={viewer.file?.name || 'preview'} />
+                )}
+
+                {viewer.kind === 'vid' && (
+                  <video className="gallery-preview-video" controls autoPlay src={viewer.url}>Tu navegador no soporta video.</video>
+                )}
+
+                {(viewer.kind === 'raw' || viewer.kind === 'i360' || viewer.kind === 'file') && (
+                  <div className="lightbox-file-fallback">
+                    <div className="lightbox-file-icon">{viewer.kind === 'raw' ? 'RAW' : viewer.kind === 'i360' ? '360°' : '📄'}</div>
+                    <div className="lightbox-file-text">Vista previa no disponible</div>
+                    <button className="btn btn-primary btn-sm" onClick={() => download(viewer.file)}>⬇ Descargar archivo</button>
+                  </div>
+                )}
+              </div>
+
+              <div className="gallery-preview-content">
+                <div className="gallery-preview-actions">
+                  <button className="btn btn-ghost btn-sm" onClick={() => navViewer(-1)}>‹ Anterior</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => navViewer(1)}>Siguiente ›</button>
+                  <button className="btn btn-primary btn-sm" onClick={() => download(viewer.file)}>⬇ Descargar</button>
+                </div>
+
+                <div className="lightbox-meta-panel gallery-preview-meta">
+                  <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(viewer.file?.size)}</strong></div>
+                  <div className="meta-row">
+                    <span>Resolución:</span>
+                    <strong>
+                      {viewer.metaLoading
+                        ? 'Calculando...'
+                        : (viewer.width && viewer.height ? `${viewer.width} x ${viewer.height} px` : 'No disponible')}
+                    </strong>
+                  </div>
+                  <div className="meta-row"><span>Orientación:</span><strong>{orientationOf(viewer.width, viewer.height)}</strong></div>
+                  <div className="meta-row"><span>Proporción:</span><strong>{aspectRatioOf(viewer.width, viewer.height)}</strong></div>
+                  <div className="meta-row"><span>Tipo:</span><strong>{extOf(viewer.file?.name || '').toUpperCase() || 'N/A'}</strong></div>
+                  <div className="meta-row"><span>Modificado:</span><strong>{formatDate(viewer.file?.lastModified)}</strong></div>
+                </div>
+              </div>
+            </aside>
           )}
 
-          {(viewer.kind === 'raw' || viewer.kind === 'i360' || viewer.kind === 'file') && (
-            <div className="lightbox-media-wrap">
-              <div className="lightbox-file-fallback">
-                <div className="lightbox-file-icon">{viewer.kind === 'raw' ? 'RAW' : viewer.kind === 'i360' ? '360°' : '📄'}</div>
-                <div className="lightbox-file-text">Vista previa no disponible</div>
-                <button className="btn btn-primary btn-sm" onClick={() => download(viewer.file)}>⬇ Descargar archivo</button>
+          {fullscreenViewer && (
+            <div className="lightbox-overlay" onClick={e => e.target.className === 'lightbox-overlay' && setFullscreenViewer(null)}>
+              <button className="lightbox-close" onClick={() => setFullscreenViewer(null)}>✕</button>
+              <button className="lightbox-nav prev" onClick={() => navViewer(-1)}>‹</button>
+              <button className="lightbox-nav next" onClick={() => navViewer(1)}>›</button>
+
+              <img className="lightbox-img" src={fullscreenViewer.url} alt={fullscreenViewer.file?.name || 'preview'} />
+
+              <div className="lightbox-bottom-row">
+                <div className="lightbox-toolbar">
+                  <span className="lightbox-name">{fullscreenViewer.file?.name || 'Sin nombre'}</span>
+                  <button className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>⬇ Descargar</button>
+                </div>
+
+                <div className="lightbox-meta-panel">
+                  <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(fullscreenViewer.file?.size)}</strong></div>
+                  <div className="meta-row">
+                    <span>Resolución:</span>
+                    <strong>
+                      {fullscreenViewer.metaLoading
+                        ? 'Calculando...'
+                        : (fullscreenViewer.width && fullscreenViewer.height ? `${fullscreenViewer.width} x ${fullscreenViewer.height} px` : 'No disponible')}
+                    </strong>
+                  </div>
+                  <div className="meta-row"><span>Orientación:</span><strong>{orientationOf(fullscreenViewer.width, fullscreenViewer.height)}</strong></div>
+                  <div className="meta-row"><span>Proporción:</span><strong>{aspectRatioOf(fullscreenViewer.width, fullscreenViewer.height)}</strong></div>
+                  <div className="meta-row"><span>Tipo:</span><strong>{extOf(fullscreenViewer.file?.name || '').toUpperCase() || 'N/A'}</strong></div>
+                  <div className="meta-row"><span>Modificado:</span><strong>{formatDate(fullscreenViewer.file?.lastModified)}</strong></div>
+                </div>
               </div>
             </div>
           )}
-
-          <div className="lightbox-bottom-row">
-            <div className="lightbox-toolbar">
-              <span className="lightbox-name">{viewer.file?.name || 'Sin nombre'}</span>
-              <button className="btn btn-ghost btn-sm" onClick={() => download(viewer.file)}>⬇ Descargar</button>
-            </div>
-
-            <div className="lightbox-meta-panel">
-              <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(viewer.file?.size)}</strong></div>
-              <div className="meta-row">
-                <span>Resolución:</span>
-                <strong>
-                  {viewer.metaLoading
-                    ? 'Calculando...'
-                    : (viewer.width && viewer.height ? `${viewer.width} x ${viewer.height} px` : 'No disponible')}
-                </strong>
-              </div>
-              <div className="meta-row"><span>Orientación:</span><strong>{orientationOf(viewer.width, viewer.height)}</strong></div>
-              <div className="meta-row"><span>Proporción:</span><strong>{aspectRatioOf(viewer.width, viewer.height)}</strong></div>
-              <div className="meta-row"><span>Tipo:</span><strong>{extOf(viewer.file?.name || '').toUpperCase() || 'N/A'}</strong></div>
-              <div className="meta-row"><span>Modificado:</span><strong>{formatDate(viewer.file?.lastModified)}</strong></div>
-            </div>
-          </div>
         </div>
       )}
     </>
   )
 }
 
-function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick }) {
+function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active }) {
   const [loading, setLoading] = useState(false)
   const ref = useRef(null)
   const prefix = prefixOf(file.name)
@@ -414,7 +483,7 @@ function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick }) {
   const typeColor = PREFIX_BADGE[prefix] || 'badge-dim'
 
   return (
-    <div ref={ref} className="gallery-item" onClick={onClick}>
+    <div ref={ref} className={`gallery-item ${active ? 'active' : ''}`} onClick={onClick}>
       {thumbUrl ? (
         <img src={thumbUrl} alt={file.name} loading="lazy" />
       ) : (
