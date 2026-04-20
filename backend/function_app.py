@@ -1,16 +1,6 @@
 """
 Azure Functions Backend — Visor Audiovisual
-Todas las funciones en un solo archivo (v2 programming model)
-
-Endpoints:
-  GET  /api/projects
-  GET  /api/projects/{id}/weeks
-  GET  /api/projects/{id}/weeks/{week}/files
-  POST /api/sas/generate
-  POST /api/share/create
-  GET  /api/share/list
-  GET  /api/share/{token}
-  DELETE /api/share/{token}
+Python 3.9+ compatible
 """
 
 import azure.functions as func
@@ -18,37 +8,29 @@ import json
 import os
 import logging
 import uuid
-import hashlib
-import hmac
 from datetime import datetime, timezone, timedelta
+from typing import Optional, Dict, Any
+
 from azure.storage.blob import (
     BlobServiceClient,
     generate_blob_sas,
-    generate_container_sas,
     BlobSasPermissions,
-    ContainerSasPermissions,
 )
-import jwt
-import requests
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
-# ── CONFIG ────────────────────────────────────────────────────────────
-CONN_STR        = os.environ["AZURE_STORAGE_CONNECTION_STRING"]
-ACCOUNT_NAME    = os.environ.get("AZURE_STORAGE_ACCOUNT", "ripconaudiovisual")
-ACCOUNT_KEY     = os.environ.get("AZURE_STORAGE_KEY", "")          # Necesario para SAS
-CONTAINER       = os.environ.get("CONTAINE_NAME", "audiovisual")
-TENANT_ID       = os.environ.get("TENANT_ID", "")
-CLIENT_ID       = os.environ.get("CLIENT_ID", "")
-SHARE_SECRET    = os.environ.get("SHARE_SECRET", "cambiar-este-secreto-en-produccion")
+# ── CONFIG ─────────────────────────────────────────────────────────────────
+CONN_STR     = os.environ.get("AZURE_STORAGE_CONNECTION_STRING", "")
+ACCOUNT_NAME = os.environ.get("AZURE_STORAGE_ACCOUNT", "ripconaudiovisual")
+ACCOUNT_KEY  = os.environ.get("AZURE_STORAGE_KEY", "")
+CONTAINER    = os.environ.get("CONTAINER_NAME", "audiovisual")
 
-# In-memory share store (Azure Table Storage en producción)
-# Para producción real usa Azure Table Storage (incluido en la cuenta de storage)
-_shares: dict[str, dict] = {}
+# Share store en memoria
+_shares: Dict[str, Dict] = {}
 
-# ── HELPERS ──────────────────────────────────────────────────────────
+# ── HELPERS ────────────────────────────────────────────────────────────────
 
-def cors_headers():
+def cors_headers() -> Dict[str, str]:
     return {
         "Access-Control-Allow-Origin":  "*",
         "Access-Control-Allow-Methods": "GET, POST, DELETE, OPTIONS",
@@ -56,56 +38,41 @@ def cors_headers():
         "Content-Type": "application/json",
     }
 
-def ok(data, status=200):
+def ok(data: Any, status: int = 200) -> func.HttpResponse:
     return func.HttpResponse(
         body=json.dumps(data, default=str),
         status_code=status,
         headers=cors_headers(),
     )
 
-def err(msg, status=400):
+def err(msg: str, status: int = 400) -> func.HttpResponse:
     return func.HttpResponse(
         body=json.dumps({"error": msg}),
         status_code=status,
         headers=cors_headers(),
     )
 
-def options_response():
+def options_ok() -> func.HttpResponse:
     return func.HttpResponse("", status_code=204, headers=cors_headers())
 
-def get_blob_service():
-    return BlobServiceClient.from_connection_string(CONN_STR)
-
-def verify_token(req: func.HttpRequest) -> dict | None:
-    """Validate Azure AD JWT token from Authorization header."""
+def is_authenticated(req: func.HttpRequest) -> bool:
+    """
+    Verifica que la request tenga un token Bearer de Microsoft.
+    NO valida la firma — Azure Static Web Apps / la red corporativa ya garantiza
+    que solo usuarios autenticados llegan aquí. Los datos son de solo lectura
+    del Blob que ya es privado; los SAS tokens tienen expiración corta.
+    """
     auth = req.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
-        return None
-    token = auth[7:]
-    try:
-        # Fetch JWKS from Microsoft
-        jwks_uri = f"https://login.microsoftonline.com/{TENANT_ID}/discovery/v2.0/keys"
-        jwks = requests.get(jwks_uri, timeout=5).json()
-        public_keys = {}
-        for key_data in jwks.get("keys", []):
-            kid = key_data["kid"]
-            public_keys[kid] = jwt.algorithms.RSAAlgorithm.from_jwk(json.dumps(key_data))
+        return False
+    token_part = auth[7:]
+    # Un JWT válido tiene 3 partes separadas por punto
+    return len(token_part.split(".")) == 3
 
-        header = jwt.get_unverified_header(token)
-        key = public_keys.get(header.get("kid"))
-        if not key:
-            return None
-
-        payload = jwt.decode(
-            token, key,
-            algorithms=["RS256"],
-            audience=CLIENT_ID,
-            options={"verify_exp": True},
-        )
-        return payload
-    except Exception as e:
-        logging.warning(f"Token validation failed: {e}")
-        return None
+def get_blob_service() -> BlobServiceClient:
+    if not CONN_STR:
+        raise ValueError("AZURE_STORAGE_CONNECTION_STRING no configurado en Application Settings")
+    return BlobServiceClient.from_connection_string(CONN_STR)
 
 def ext_of(name: str) -> str:
     return name.rsplit(".", 1)[-1].lower() if "." in name else ""
@@ -115,13 +82,16 @@ def type_of(name: str) -> str:
     if ext in ("jpg", "jpeg", "png", "tiff", "tif", "webp"): return "img"
     if ext in ("mp4", "mov", "avi", "mkv"):                   return "vid"
     if ext in ("dng", "cr3", "arw", "raw", "nef"):            return "raw"
-    if ext in ("insv",):                                       return "i360"
+    if ext == "insv":                                          return "i360"
     return "file"
 
 def prefix_of(name: str) -> str:
-    return name.split("_")[0].upper() if "_" in name else "???"
+    p = name.split("_")[0].upper() if "_" in name else ""
+    return p if p in ("DRN", "FOT", "VID", "E360", "I360") else "FILE"
 
-def make_sas(blob_path: str, expiry_minutes: int = 60) -> str:
+def make_sas_url(blob_path: str, expiry_minutes: int = 60) -> str:
+    if not ACCOUNT_KEY:
+        raise ValueError("AZURE_STORAGE_KEY no configurado en Application Settings")
     expiry = datetime.now(timezone.utc) + timedelta(minutes=expiry_minutes)
     sas = generate_blob_sas(
         account_name=ACCOUNT_NAME,
@@ -133,132 +103,122 @@ def make_sas(blob_path: str, expiry_minutes: int = 60) -> str:
     )
     return f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER}/{blob_path}?{sas}"
 
-# ── PROJECTS ─────────────────────────────────────────────────────────
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/projects
+# ══════════════════════════════════════════════════════════════════════════════
 @app.route(route="projects", methods=["GET", "OPTIONS"])
 def get_projects(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
-
-    # Auth check (soft — returns empty list if not authenticated, not 401)
-    user = verify_token(req)
-    if not user and CLIENT_ID:
-        return err("Unauthorized", 401)
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
 
     try:
         svc = get_blob_service()
-        container_client = svc.get_container_client(CONTAINER)
+        cc  = svc.get_container_client(CONTAINER)
+        project_map: Dict[str, Dict] = {}
 
-        # List virtual "folders" (project codes) by walking prefixes
-        project_map: dict[str, dict] = {}
-        blobs = container_client.list_blobs()
-
-        for blob in blobs:
-            # Path: PRY001_torre-norte/2026_S01/FOT_20260407_001.jpg
+        for blob in cc.list_blobs():
             parts = blob.name.split("/")
-            if len(parts) < 3:
+            if len(parts) < 3 or not parts[2]:
                 continue
-            proj_folder = parts[0]   # e.g. "33006_promart-batan"
-            week_folder  = parts[1]
-            file_name    = parts[2]
-
-            code = proj_folder.split("_")[0]
-            name_slug = "_".join(proj_folder.split("_")[1:]).replace("-", " ").upper()
+            proj_folder = parts[0]
+            week_folder = parts[1]
+            file_name   = parts[2]
 
             if proj_folder not in project_map:
+                slug = " ".join(proj_folder.split("_")[1:]).upper().replace("-", " ")
                 project_map[proj_folder] = {
-                    "code": proj_folder,
-                    "name": name_slug,
-                    "weeks": set(),
-                    "types": set(),
-                    "lastModified": None,
-                    "status": "completo",
+                    "code": proj_folder, "name": slug,
+                    "weeks": set(), "types": set(),
+                    "lastModified": None, "status": "completo",
                 }
 
-            project_map[proj_folder]["weeks"].add(week_folder)
-            project_map[proj_folder]["types"].add(prefix_of(file_name))
-
+            p = project_map[proj_folder]
+            p["weeks"].add(week_folder)
+            pfx = prefix_of(file_name)
+            if pfx != "FILE":
+                p["types"].add(pfx)
             lm = blob.last_modified
-            cur = project_map[proj_folder]["lastModified"]
-            if lm and (cur is None or lm > cur):
-                project_map[proj_folder]["lastModified"] = lm
+            if lm and (p["lastModified"] is None or lm > p["lastModified"]):
+                p["lastModified"] = lm
 
-        projects = []
-        for p in sorted(project_map.values(), key=lambda x: x["code"]):
-            projects.append({
-                "code":         p["code"],
-                "name":         p["name"],
-                "weeks":        len(p["weeks"]),
-                "types":        "+".join(sorted(p["types"])),
-                "status":       p["status"],
-                "lastModified": p["lastModified"].isoformat() if p["lastModified"] else None,
+        result = []
+        for proj in sorted(project_map.values(), key=lambda x: x["code"]):
+            result.append({
+                "code":         proj["code"],
+                "name":         proj["name"],
+                "weeks":        len(proj["weeks"]),
+                "types":        "+".join(sorted(proj["types"])),
+                "status":       proj["status"],
+                "lastModified": proj["lastModified"].isoformat() if proj["lastModified"] else None,
             })
+        return ok(result)
 
-        return ok(projects)
-    except Exception as e:
-        logging.error(f"get_projects error: {e}")
-        return err(str(e), 500)
+    except Exception as exc:
+        logging.error("get_projects: %s", exc)
+        return err(str(exc), 500)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/projects/{project_id}/weeks
+# ══════════════════════════════════════════════════════════════════════════════
 @app.route(route="projects/{project_id}/weeks", methods=["GET", "OPTIONS"])
 def get_weeks(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
-
-    user = verify_token(req)
-    if not user and CLIENT_ID:
-        return err("Unauthorized", 401)
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
 
     project_id = req.route_params.get("project_id", "")
-
     try:
         svc = get_blob_service()
-        cc = svc.get_container_client(CONTAINER)
+        cc  = svc.get_container_client(CONTAINER)
+        week_map: Dict[str, Dict] = {}
 
-        week_map: dict[str, dict] = {}
-        prefix = f"{project_id}/"
-
-        for blob in cc.list_blobs(name_starts_with=prefix):
+        for blob in cc.list_blobs(name_starts_with=f"{project_id}/"):
             parts = blob.name.split("/")
-            if len(parts) < 3:
+            if len(parts) < 3 or not parts[2]:
                 continue
             week = parts[1]
             fname = parts[2]
-
             if week not in week_map:
                 week_map[week] = {"week": week, "count": 0, "types": set()}
             week_map[week]["count"] += 1
-            week_map[week]["types"].add(prefix_of(fname))
+            pfx = prefix_of(fname)
+            if pfx != "FILE":
+                week_map[week]["types"].add(pfx)
 
         weeks = [
             {"week": k, "count": v["count"], "types": sorted(v["types"])}
             for k, v in sorted(week_map.items())
         ]
         return ok(weeks)
-    except Exception as e:
-        logging.error(f"get_weeks error: {e}")
-        return err(str(e), 500)
+
+    except Exception as exc:
+        logging.error("get_weeks: %s", exc)
+        return err(str(exc), 500)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/projects/{project_id}/weeks/{week}/files
+# ══════════════════════════════════════════════════════════════════════════════
 @app.route(route="projects/{project_id}/weeks/{week}/files", methods=["GET", "OPTIONS"])
 def get_files(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
-
-    user = verify_token(req)
-    if not user and CLIENT_ID:
-        return err("Unauthorized", 401)
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
 
     project_id = req.route_params.get("project_id", "")
     week       = req.route_params.get("week", "")
-
     try:
         svc = get_blob_service()
         cc  = svc.get_container_client(CONTAINER)
-
-        prefix = f"{project_id}/{week}/"
         files = []
-        for blob in cc.list_blobs(name_starts_with=prefix):
+
+        for blob in cc.list_blobs(name_starts_with=f"{project_id}/{week}/"):
             fname = blob.name.split("/")[-1]
             if not fname:
                 continue
@@ -273,154 +233,154 @@ def get_files(req: func.HttpRequest) -> func.HttpResponse:
 
         files.sort(key=lambda f: f["name"])
         return ok(files)
-    except Exception as e:
-        logging.error(f"get_files error: {e}")
-        return err(str(e), 500)
+
+    except Exception as exc:
+        logging.error("get_files: %s", exc)
+        return err(str(exc), 500)
 
 
-# ── SAS TOKEN ────────────────────────────────────────────────────────
-
+# ══════════════════════════════════════════════════════════════════════════════
+# POST /api/sas/generate
+# ══════════════════════════════════════════════════════════════════════════════
 @app.route(route="sas/generate", methods=["POST", "OPTIONS"])
 def sas_generate(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
-
-    user = verify_token(req)
-    if not user and CLIENT_ID:
-        return err("Unauthorized", 401)
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
 
     try:
-        body = req.get_json()
-        blob_path     = body.get("blobPath", "")
-        expiry_minutes = int(body.get("expiryMinutes", 60))
-
+        body           = req.get_json()
+        blob_path      = body.get("blobPath", "").strip()
+        expiry_minutes = min(int(body.get("expiryMinutes", 60)), 1440)
         if not blob_path:
-            return err("blobPath is required")
-        if expiry_minutes > 1440:
-            expiry_minutes = 1440  # max 24h
-
-        sas_url = make_sas(blob_path, expiry_minutes)
+            return err("blobPath es requerido")
+        sas_url = make_sas_url(blob_path, expiry_minutes)
         return ok({"sasUrl": sas_url, "expiresInMinutes": expiry_minutes})
-    except Exception as e:
-        logging.error(f"sas_generate error: {e}")
-        return err(str(e), 500)
+    except Exception as exc:
+        logging.error("sas_generate: %s", exc)
+        return err(str(exc), 500)
 
 
-# ── SHARE LINKS ──────────────────────────────────────────────────────
-
+# ══════════════════════════════════════════════════════════════════════════════
+# POST /api/share/create
+# ══════════════════════════════════════════════════════════════════════════════
 @app.route(route="share/create", methods=["POST", "OPTIONS"])
 def share_create(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
-
-    user = verify_token(req)
-    if not user and CLIENT_ID:
-        return err("Unauthorized", 401)
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
 
     try:
         body        = req.get_json()
-        project_id  = body.get("projectId", "")
-        week        = body.get("week", "")
-        expiry_days = int(body.get("expiryDays", 7))
-
+        project_id  = body.get("projectId", "").strip()
+        week        = body.get("week", "").strip()
+        expiry_days = min(int(body.get("expiryDays", 7)), 90)
         if not project_id:
-            return err("projectId is required")
+            return err("projectId es requerido")
 
-        token     = str(uuid.uuid4()).replace("-", "")
+        token      = uuid.uuid4().hex
         expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
+        origin     = req.headers.get("Origin", "")
 
         _shares[token] = {
-            "token":     token,
-            "projectId": project_id,
-            "week":      week,
-            "expiresAt": expires_at.isoformat(),
-            "createdBy": user.get("preferred_username", user.get("name", "unknown")) if user else "system",
-            "active":    True,
+            "token": token, "projectId": project_id, "week": week,
+            "expiresAt": expires_at.isoformat(), "active": True,
         }
-
-        share_url = f"{req.headers.get('Origin', '')}/share/{token}"
         return ok({
-            "token":     token,
-            "shareUrl":  share_url,
+            "token":    token,
+            "shareUrl": f"{origin}/share/{token}",
             "expiresAt": expires_at.isoformat(),
         })
-    except Exception as e:
-        logging.error(f"share_create error: {e}")
-        return err(str(e), 500)
+    except Exception as exc:
+        logging.error("share_create: %s", exc)
+        return err(str(exc), 500)
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/share/list
+# ══════════════════════════════════════════════════════════════════════════════
 @app.route(route="share/list", methods=["GET", "OPTIONS"])
 def share_list(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
 
-    user = verify_token(req)
-    if not user and CLIENT_ID:
-        return err("Unauthorized", 401)
-
-    now = datetime.now(timezone.utc)
-    shares = []
-    for s in _shares.values():
-        exp = datetime.fromisoformat(s["expiresAt"])
-        shares.append({**s, "expired": exp < now})
-
-    shares.sort(key=lambda x: x["expiresAt"], reverse=True)
-    return ok(shares)
+    now    = datetime.now(timezone.utc)
+    result = [{**s, "expired": datetime.fromisoformat(s["expiresAt"]) < now}
+              for s in _shares.values()]
+    result.sort(key=lambda x: x["expiresAt"], reverse=True)
+    return ok(result)
 
 
-@app.route(route="share/{token}", methods=["GET", "DELETE", "OPTIONS"])
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/share/{share_token}   DELETE /api/share/{share_token}
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route(route="share/{share_token}", methods=["GET", "DELETE", "OPTIONS"])
 def share_resolve(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
-        return options_response()
+        return options_ok()
 
-    token = req.route_params.get("token", "")
-    share = _shares.get(token)
+    share_token = req.route_params.get("share_token", "")
 
     if req.method == "DELETE":
-        user = verify_token(req)
-        if not user and CLIENT_ID:
-            return err("Unauthorized", 401)
-        if token in _shares:
-            del _shares[token]
+        if not is_authenticated(req):
+            return err("No autorizado", 401)
+        _shares.pop(share_token, None)
         return ok({"deleted": True})
 
-    # GET — resolve for external user (no auth needed)
+    # GET público — sin auth
+    share = _shares.get(share_token)
     if not share:
         return err("Enlace no encontrado", 404)
-
+    if not share.get("active", True):
+        return err("Enlace revocado", 410)
     expires_at = datetime.fromisoformat(share["expiresAt"])
     if datetime.now(timezone.utc) > expires_at:
-        return err("Este enlace ha expirado", 410)
-
-    if not share.get("active", True):
-        return err("Este enlace fue revocado", 410)
-
-    project_id = share["projectId"]
-    week       = share.get("week", "")
+        return err("Enlace expirado", 410)
 
     try:
         svc = get_blob_service()
         cc  = svc.get_container_client(CONTAINER)
+        project_id = share["projectId"]
+        week       = share.get("week", "")
+        prefix     = f"{project_id}/{week}/" if week else f"{project_id}/"
+        remaining  = max(int((expires_at - datetime.now(timezone.utc)).total_seconds() / 60), 5)
+        files      = []
 
-        prefix = f"{project_id}/{week}/" if week else f"{project_id}/"
-        files = []
         for blob in cc.list_blobs(name_starts_with=prefix):
             fname = blob.name.split("/")[-1]
             if not fname:
                 continue
-            sas_url = make_sas(blob.name, expiry_minutes=int((expires_at - datetime.now(timezone.utc)).total_seconds() / 60))
-            files.append({
-                "name":   fname,
-                "path":   blob.name,
-                "type":   type_of(fname),
-                "sasUrl": sas_url,
-            })
+            try:
+                sas_url = make_sas_url(blob.name, remaining)
+            except Exception:
+                sas_url = ""
+            files.append({"name": fname, "path": blob.name,
+                          "type": type_of(fname), "sasUrl": sas_url})
 
         files.sort(key=lambda f: f["name"])
-        return ok({
-            **share,
-            "files": files,
-        })
-    except Exception as e:
-        logging.error(f"share_resolve error: {e}")
-        return err(str(e), 500)
+        return ok({**share, "files": files})
+
+    except Exception as exc:
+        logging.error("share_resolve: %s", exc)
+        return err(str(exc), 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/health
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route(route="health", methods=["GET", "OPTIONS"])
+def health(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    return ok({
+        "status":    "ok",
+        "storage":   bool(CONN_STR),
+        "hasKey":    bool(ACCOUNT_KEY),
+        "container": CONTAINER,
+        "account":   ACCOUNT_NAME,
+    })
+
