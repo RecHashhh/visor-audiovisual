@@ -11,14 +11,14 @@ const TYPE_BADGE = {
 export default function WeeksPage() {
   const { id } = useParams()
   const nav = useNavigate()
-  const [weeks, setWeeks] = useState([])
+  const [browse, setBrowse] = useState({ folders: [], files: [] })
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    Promise.all([api.getWeeks(id), api.getProjects()])
-      .then(([w, projects]) => {
-        setWeeks(w)
+    Promise.all([api.getBrowse(id, ''), api.getProjects()])
+      .then(([tree, projects]) => {
+        setBrowse(tree || { folders: [], files: [] })
         setProject(projects.find(p => p.code === id))
       })
       .finally(() => setLoading(false))
@@ -42,30 +42,30 @@ export default function WeeksPage() {
           </span>
         </div>
         <p className="page-sub">
-          {weeks.length} semanas registradas
+          {browse.folders.length} carpetas · {browse.files.length} archivos directos
           {project?.status && ` · ${project.status}`}
         </p>
       </div>
 
       {loading && <div className="loading"><div className="spinner"/></div>}
-      {!loading && weeks.length === 0 && (
+      {!loading && browse.folders.length === 0 && browse.files.length === 0 && (
         <div className="empty">
           <div className="empty-icon">📅</div>
-          <div className="empty-text">Sin semanas registradas en BLOB</div>
+          <div className="empty-text">Sin carpetas registradas en BLOB</div>
         </div>
       )}
 
-      {!loading && weeks.length > 0 && (
+      {!loading && (browse.folders.length > 0 || browse.files.length > 0) && (
         <div className="week-list">
-          {weeks.map(w => (
-            <div key={w.week} className="week-row" onClick={() => nav(`/project/${id}/week/${w.week}`)}>
-              <div className="week-label">{w.week}</div>
+          {browse.folders.map(folder => (
+            <div key={folder.path} className="week-row" onClick={() => nav(`/project/${id}/week/${encodeURIComponent(folder.path)}`)}>
+              <div className="week-label">{folder.name}</div>
               <div className="week-badges">
-                {(w.types || []).map(t => (
+                {(folder.types || []).map(t => (
                   <span key={t} className={`badge ${TYPE_BADGE[t] || 'badge-dim'}`}>{t}</span>
                 ))}
               </div>
-              <div className="week-count">{w.count} archivos</div>
+              <div className="week-count">{folder.count} archivos</div>
               <div className="week-arrow">›</div>
             </div>
           ))}

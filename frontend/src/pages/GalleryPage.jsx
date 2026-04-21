@@ -1,6 +1,6 @@
 // src/pages/GalleryPage.jsx
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 
 const PREFIX_BADGE = {
@@ -91,7 +91,8 @@ async function downloadAsFile(url, filename) {
 
 export default function GalleryPage() {
   const { id, week } = useParams()
-  const [files, setFiles] = useState([])
+  const nav = useNavigate()
+  const [browse, setBrowse] = useState({ folders: [], files: [] })
   const [sasCache, setSasCache] = useState({})
   const [thumbCache, setThumbCache] = useState({})
   const thumbObjectUrlsRef = useRef(new Set())
@@ -106,10 +107,17 @@ export default function GalleryPage() {
   const [sharingDays, setSharingDays] = useState(7)
   const [showSharePanel, setShowSharePanel] = useState(false)
   const [copied, setCopied] = useState(false)
+  const viewerRequestIdRef = useRef(0)
+  const weekLabel = (week || '').split('/').join(' / ')
 
   useEffect(() => {
-    api.getFiles(id, week)
-      .then(setFiles)
+    setLoading(true)
+    setBrowse({ folders: [], files: [] })
+    setViewer(null)
+    setPreviewOpen(false)
+
+    api.getBrowse(id, week || '')
+      .then(setBrowse)
       .finally(() => setLoading(false))
   }, [id, week])
 
@@ -137,18 +145,36 @@ export default function GalleryPage() {
   }, [sasCache])
 
   const openViewer = async (file, idx) => {
+    const requestId = viewerRequestIdRef.current + 1
+    viewerRequestIdRef.current = requestId
     const kind = kindOf(file.name)
     const requiresUrl = kind === 'img' || kind === 'vid'
-    const url = requiresUrl ? await getSas(file.path) : null
     setFullscreenViewer(null)
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current)
       closeTimerRef.current = null
     }
-    setViewer({ idx, url, file, kind, width: null, height: null, metaLoading: kind === 'img' || kind === 'vid' })
+    setViewer({ idx, url: null, file, kind, width: null, height: null, metaLoading: requiresUrl, urlLoading: requiresUrl })
     setPreviewOpen(true)
 
-    if (kind !== 'img' && kind !== 'vid') return
+    if (!requiresUrl) return
+
+    let url = null
+    try {
+      url = await getSas(file.path)
+      if (viewerRequestIdRef.current !== requestId) return
+      setViewer((curr) => {
+        if (!curr || curr.file?.path !== file.path) return curr
+        return { ...curr, url, urlLoading: false }
+      })
+    } catch {
+      if (viewerRequestIdRef.current !== requestId) return
+      setViewer((curr) => {
+        if (!curr || curr.file?.path !== file.path) return curr
+        return { ...curr, urlLoading: false, metaLoading: false }
+      })
+      return
+    }
 
     try {
       const meta = kind === 'img' ? await readImageDimensions(url) : await readVideoDimensions(url)
@@ -209,6 +235,9 @@ export default function GalleryPage() {
     setTimeout(() => setCopied(false), 2000)
   }
 
+  const files = browse.files || []
+  const folders = browse.folders || []
+  const showFoldersOnly = folders.length > 0
   const prefixes = [...new Set(files.map(f => prefixOf(f.name)))].filter(Boolean)
   const formatFilteredFiles = filter === 'all' ? files : files.filter(f => prefixOf(f.name) === filter)
   const displayFiles = sizeFilter === 'all'
@@ -255,16 +284,16 @@ export default function GalleryPage() {
         <span className="sep">›</span>
         <Link to={`/project/${id}`}>{id}</Link>
         <span className="sep">›</span>
-        <span className="current">{week}</span>
+        <span className="current">{weekLabel}</span>
       </div>
 
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
         <div>
           <h1 className="page-title project-code-title" style={{ fontSize: '1.2rem' }}>
-            {id} <span>/ {week}</span>
+            {id} <span>/ {weekLabel}</span>
           </h1>
           <p className="page-sub">
-            {files.length} archivos · {counts.img} imágenes · {counts.vid} videos · {counts.raw} RAW
+            {folders.length} carpetas · {files.length} archivos · {counts.img} imágenes · {counts.vid} videos · {counts.raw} RAW
           </p>
         </div>
         <button className="btn btn-ghost btn-sm" onClick={() => setShowSharePanel(s => !s)}>
@@ -302,50 +331,76 @@ export default function GalleryPage() {
       {!loading && (
         <div className={`gallery-split ${viewer ? 'has-preview' : 'no-preview'}`}>
           <div className="gallery-main">
-            {/* Filters */}
-            <div className="gallery-toolbar">
-              <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
-                Todos ({files.length})
-              </button>
-              {prefixes.map(p => (
-                <button key={p} className={`filter-chip ${filter === p ? 'active' : ''}`} onClick={() => setFilter(p)}>
-                  {p} ({files.filter(f => prefixOf(f.name) === p).length})
-                </button>
-              ))}
-            </div>
+            {folders.length > 0 && (
+              <div className="week-list">
+                {folders.map((folder) => (
+                  <div
+                    key={folder.path}
+                    className="week-row"
+                    onClick={() => nav(`/project/${id}/week/${encodeURIComponent(folder.path)}`)}
+                  >
+                    <div className="week-label">{folder.name}</div>
+                    <div className="week-badges">
+                      {(folder.types || []).map((t) => (
+                        <span key={t} className={`badge ${PREFIX_BADGE[t] || 'badge-dim'}`}>
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="week-count">{folder.count} archivos</div>
+                    <div className="week-arrow">›</div>
+                  </div>
+                ))}
+              </div>
+            )}
 
-            <div className="gallery-toolbar" style={{ marginTop: 8 }}>
-              <button className={`filter-chip ${sizeFilter === 'all' ? 'active' : ''}`} onClick={() => setSizeFilter('all')}>
-                Cualquier tamaño ({files.length})
-              </button>
-              <button className={`filter-chip ${sizeFilter === 'small' ? 'active' : ''}`} onClick={() => setSizeFilter('small')}>
-                Pequeño ({sizeCounts.small})
-              </button>
-              <button className={`filter-chip ${sizeFilter === 'medium' ? 'active' : ''}`} onClick={() => setSizeFilter('medium')}>
-                Mediano ({sizeCounts.medium})
-              </button>
-              <button className={`filter-chip ${sizeFilter === 'large' ? 'active' : ''}`} onClick={() => setSizeFilter('large')}>
-                Grande ({sizeCounts.large})
-              </button>
-            </div>
+            {!showFoldersOnly && (
+              <>
+                {/* Filters */}
+                <div className="gallery-toolbar">
+                  <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
+                    Todos ({files.length})
+                  </button>
+                  {prefixes.map(p => (
+                    <button key={p} className={`filter-chip ${filter === p ? 'active' : ''}`} onClick={() => setFilter(p)}>
+                      {p} ({files.filter(f => prefixOf(f.name) === p).length})
+                    </button>
+                  ))}
+                </div>
 
-            {/* Gallery grid */}
-            <div className="gallery-grid">
-              {displayFiles.map((file, idx) => (
-                <GalleryItem
-                  key={file.name}
-                  file={file}
-                  thumbUrl={thumbCache[file.path] || null}
-                  onThumbLoaded={(url) => {
-                    thumbObjectUrlsRef.current.add(url)
-                    setThumbCache((c) => (c[file.path] ? c : { ...c, [file.path]: url }))
-                  }}
-                  getSas={getSas}
-                  onClick={() => openItem(file, idx)}
-                  active={viewer?.file?.name === file.name}
-                />
-              ))}
-            </div>
+                <div className="gallery-toolbar" style={{ marginTop: 8 }}>
+                  <button className={`filter-chip ${sizeFilter === 'all' ? 'active' : ''}`} onClick={() => setSizeFilter('all')}>
+                    Cualquier tamaño ({files.length})
+                  </button>
+                  <button className={`filter-chip ${sizeFilter === 'small' ? 'active' : ''}`} onClick={() => setSizeFilter('small')}>
+                    Pequeño ({sizeCounts.small})
+                  </button>
+                  <button className={`filter-chip ${sizeFilter === 'medium' ? 'active' : ''}`} onClick={() => setSizeFilter('medium')}>
+                    Mediano ({sizeCounts.medium})
+                  </button>
+                  <button className={`filter-chip ${sizeFilter === 'large' ? 'active' : ''}`} onClick={() => setSizeFilter('large')}>
+                    Grande ({sizeCounts.large})
+                  </button>
+                </div>
+
+                <div className="gallery-grid">
+                  {displayFiles.map((file, idx) => (
+                    <GalleryItem
+                      key={file.path || file.name}
+                      file={file}
+                      thumbUrl={thumbCache[file.path] || null}
+                      onThumbLoaded={(url) => {
+                        thumbObjectUrlsRef.current.add(url)
+                        setThumbCache((c) => (c[file.path] ? c : { ...c, [file.path]: url }))
+                      }}
+                      getSas={getSas}
+                      onClick={() => openItem(file, idx)}
+                      active={viewer?.file?.name === file.name}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
           </div>
 
           {viewer && (
@@ -359,15 +414,31 @@ export default function GalleryPage() {
               </div>
 
               <div className="gallery-preview-media" onClick={() => viewer.kind === 'img' && setFullscreenViewer(viewer)}>
-                {viewer.kind === 'img' && (
+                {viewer.urlLoading && (
+                  <div className="gallery-preview-empty">
+                    <div className="spinner" />
+                    <div className="gallery-preview-emptyTitle">Preparando vista previa</div>
+                    <div className="gallery-preview-emptyText">El panel ya está abierto; cargando el archivo...</div>
+                  </div>
+                )}
+
+                {!viewer.urlLoading && viewer.kind === 'img' && viewer.url && (
                   <img className="gallery-preview-img" src={viewer.url} alt={viewer.file?.name || 'preview'} />
                 )}
 
-                {viewer.kind === 'vid' && (
+                {!viewer.urlLoading && viewer.kind === 'vid' && viewer.url && (
                   <video className="gallery-preview-video" controls autoPlay src={viewer.url}>Tu navegador no soporta video.</video>
                 )}
 
-                {(viewer.kind === 'raw' || viewer.kind === 'i360' || viewer.kind === 'file') && (
+                {!viewer.urlLoading && (viewer.kind === 'img' || viewer.kind === 'vid') && !viewer.url && (
+                  <div className="gallery-preview-empty">
+                    <div className="gallery-preview-emptyTitle">No se pudo cargar la vista previa</div>
+                    <div className="gallery-preview-emptyText">Puedes descargar el archivo para abrirlo localmente.</div>
+                    <button className="btn btn-primary btn-sm" onClick={() => download(viewer.file)}>⬇ Descargar archivo</button>
+                  </div>
+                )}
+
+                {!viewer.urlLoading && !viewer.url && (viewer.kind === 'raw' || viewer.kind === 'i360' || viewer.kind === 'file') && (
                   <div className="lightbox-file-fallback">
                     <div className="lightbox-file-icon">{viewer.kind === 'raw' ? 'RAW' : viewer.kind === 'i360' ? '360°' : '📄'}</div>
                     <div className="lightbox-file-text">Vista previa no disponible</div>
@@ -388,7 +459,9 @@ export default function GalleryPage() {
                   <div className="meta-row">
                     <span>Resolución:</span>
                     <strong>
-                      {viewer.metaLoading
+                      {viewer.urlLoading
+                        ? 'Preparando...'
+                        : viewer.metaLoading
                         ? 'Calculando...'
                         : (viewer.width && viewer.height ? `${viewer.width} x ${viewer.height} px` : 'No disponible')}
                     </strong>

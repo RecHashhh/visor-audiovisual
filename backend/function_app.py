@@ -9,6 +9,7 @@ import os
 import logging
 import uuid
 import io
+from urllib.parse import unquote
 from threading import Lock
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
@@ -130,6 +131,80 @@ def prefix_of(name: str) -> str:
 def is_marker_file(name: str) -> bool:
     n = (name or "").strip().lower()
     return n in (".keep", ".empty", ".placeholder")
+
+def folder_path_of(blob_name: str) -> Optional[str]:
+    parts = (blob_name or "").split("/")
+    if len(parts) < 3:
+        return None
+    folder_parts = [part for part in parts[1:-1] if part]
+    if not folder_parts:
+        return None
+    return "/".join(folder_parts)
+
+def normalize_folder_path(path: str) -> str:
+    return unquote(path or "").strip().strip("/")
+
+def list_folder_children(project_id: str, folder_path: str) -> Dict[str, list]:
+    svc = get_blob_service()
+    cc = svc.get_container_client(CONTAINER)
+    current = normalize_folder_path(folder_path)
+    prefix = f"{project_id}/{current}/" if current else f"{project_id}/"
+
+    folder_map: Dict[str, Dict[str, Any]] = {}
+    files: list = []
+
+    for blob in cc.list_blobs(name_starts_with=prefix):
+        remainder = blob.name[len(prefix):]
+        if not remainder:
+            continue
+
+        leaf_name = remainder.split("/")[-1]
+        if is_marker_file(leaf_name):
+            continue
+
+        if "/" not in remainder:
+            files.append({
+                "name": leaf_name,
+                "path": blob.name,
+                "size": blob.size,
+                "type": type_of(leaf_name),
+                "prefix": prefix_of(leaf_name),
+                "lastModified": blob.last_modified.isoformat() if blob.last_modified else None,
+            })
+            continue
+
+        child_name = remainder.split("/", 1)[0]
+        child_path = f"{current}/{child_name}" if current else child_name
+        if child_path not in folder_map:
+            folder_map[child_path] = {
+                "name": child_name,
+                "path": child_path,
+                "count": 0,
+                "types": set(),
+                "lastModified": None,
+            }
+
+        child = folder_map[child_path]
+        child["count"] += 1
+        pfx = prefix_of(leaf_name)
+        if pfx != "FILE":
+            child["types"].add(pfx)
+        lm = blob.last_modified
+        if lm and (child["lastModified"] is None or lm > child["lastModified"]):
+            child["lastModified"] = lm
+
+    folders = []
+    for folder in sorted(folder_map.values(), key=lambda x: x["path"]):
+        folders.append({
+            "name": folder["name"],
+            "path": folder["path"],
+            "count": folder["count"],
+            "types": sorted(folder["types"]),
+            "lastModified": folder["lastModified"].isoformat() if folder["lastModified"] else None,
+        })
+
+    files.sort(key=lambda f: f["name"])
+    return {"folders": folders, "files": files}
 
 def make_sas_url(blob_path: str, expiry_minutes: int = 60) -> str:
     if not ACCOUNT_KEY:
@@ -275,12 +350,15 @@ def build_index_payloads() -> Dict[str, Any]:
             continue
 
         parts = blob.name.split("/")
-        if len(parts) < 3 or not parts[2]:
+        if len(parts) < 3 or not parts[-1]:
             continue
 
         project_id = parts[0]
-        week = parts[1]
-        fname = parts[2]
+        folder_path = folder_path_of(blob.name)
+        fname = parts[-1]
+
+        if not folder_path:
+            continue
 
         if project_id not in project_map:
             slug = " ".join(project_id.split("_")[1:]).upper().replace("-", " ")
@@ -299,7 +377,7 @@ def build_index_payloads() -> Dict[str, Any]:
             proj["hasMarker"] = True
             continue
 
-        proj["weeks"].add(week)
+        proj["weeks"].add(folder_path)
         proj["fileCount"] += 1
         pfx = prefix_of(fname)
         if pfx != "FILE":
@@ -310,13 +388,13 @@ def build_index_payloads() -> Dict[str, Any]:
 
         if project_id not in week_map_by_project:
             week_map_by_project[project_id] = {}
-        if week not in week_map_by_project[project_id]:
-            week_map_by_project[project_id][week] = {"week": week, "count": 0, "types": set()}
-        week_map_by_project[project_id][week]["count"] += 1
+        if folder_path not in week_map_by_project[project_id]:
+            week_map_by_project[project_id][folder_path] = {"week": folder_path, "count": 0, "types": set()}
+        week_map_by_project[project_id][folder_path]["count"] += 1
         if pfx != "FILE":
-            week_map_by_project[project_id][week]["types"].add(pfx)
+            week_map_by_project[project_id][folder_path]["types"].add(pfx)
 
-        file_key = f"{project_id}:{week}"
+        file_key = f"{project_id}::{folder_path}"
         if file_key not in files_map_by_project_week:
             files_map_by_project_week[file_key] = []
         files_map_by_project_week[file_key].append({
@@ -371,7 +449,7 @@ def refresh_content_indexes() -> Dict[str, int]:
         save_json_blob(index_weeks_blob_name(project_id), weeks)
 
     for key, files in payloads["filesByProjectWeek"].items():
-        project_id, week = key.split(":", 1)
+        project_id, week = key.split("::", 1)
         save_json_blob(index_files_blob_name(project_id, week), files)
 
     clear_index_related_cache()
@@ -500,11 +578,13 @@ def get_projects(req: func.HttpRequest) -> func.HttpResponse:
                 p["hasMarker"] = True
                 continue
 
-            if len(parts) < 3 or not parts[2]:
+            if len(parts) < 3 or not parts[-1]:
                 continue
 
-            week_folder = parts[1]
-            file_name = parts[2]
+            week_folder = folder_path_of(blob.name)
+            file_name = parts[-1]
+            if not week_folder:
+                continue
             if is_marker_file(file_name):
                 p["hasMarker"] = True
                 continue
@@ -576,10 +656,12 @@ def get_weeks(req: func.HttpRequest) -> func.HttpResponse:
 
         for blob in cc.list_blobs(name_starts_with=f"{project_id}/"):
             parts = blob.name.split("/")
-            if len(parts) < 3 or not parts[2]:
+            if len(parts) < 3 or not parts[-1]:
                 continue
-            week = parts[1]
-            fname = parts[2]
+            week = folder_path_of(blob.name)
+            fname = parts[-1]
+            if not week:
+                continue
             if is_marker_file(fname):
                 continue
             if week not in week_map:
@@ -612,7 +694,7 @@ def get_files(req: func.HttpRequest) -> func.HttpResponse:
         return err("No autorizado", 401)
 
     project_id = req.route_params.get("project_id", "")
-    week       = req.route_params.get("week", "")
+    week       = normalize_folder_path(req.route_params.get("week", ""))
     cache_key = f"files:{project_id}:{week}"
     cached = cache_get(cache_key)
     if cached is not None:
@@ -628,31 +710,40 @@ def get_files(req: func.HttpRequest) -> func.HttpResponse:
             logging.warning("get_files index fallback (%s/%s): %s", project_id, week, exc)
 
     try:
-        svc = get_blob_service()
-        cc  = svc.get_container_client(CONTAINER)
-        files = []
-
-        for blob in cc.list_blobs(name_starts_with=f"{project_id}/{week}/"):
-            fname = blob.name.split("/")[-1]
-            if not fname:
-                continue
-            if is_marker_file(fname):
-                continue
-            files.append({
-                "name":         fname,
-                "path":         blob.name,
-                "size":         blob.size,
-                "type":         type_of(fname),
-                "prefix":       prefix_of(fname),
-                "lastModified": blob.last_modified.isoformat() if blob.last_modified else None,
-            })
-
-        files.sort(key=lambda f: f["name"])
+        files = list_folder_children(project_id, week)["files"]
         cache_set(cache_key, files)
         return ok(files)
 
     except Exception as exc:
         logging.error("get_files: %s", exc)
+        return err(str(exc), 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# GET /api/projects/{project_id}/browse
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route(route="projects/{project_id}/browse", methods=["GET", "OPTIONS"])
+def browse_folder(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    if not is_authenticated(req):
+        return err("No autorizado", 401)
+
+    project_id = req.route_params.get("project_id", "")
+    path = normalize_folder_path(req.params.get("path", ""))
+    cache_key = f"browse:{project_id}:{path}"
+    cached = cache_get(cache_key)
+    if cached is not None:
+        return ok(cached)
+
+    try:
+        payload = list_folder_children(project_id, path)
+        result = {"path": path, **payload}
+        cache_set(cache_key, result)
+        return ok(result)
+
+    except Exception as exc:
+        logging.error("browse_folder: %s", exc)
         return err(str(exc), 500)
 
 

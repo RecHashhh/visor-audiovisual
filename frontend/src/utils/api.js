@@ -25,6 +25,14 @@ function setCached(key, value) {
   }
 }
 
+function clearCachedByPrefixes(prefixes = []) {
+  Object.keys(_cache).forEach((key) => {
+    if (prefixes.some((prefix) => key.startsWith(prefix))) {
+      delete _cache[key]
+    }
+  })
+}
+
 async function getToken() {
   const account = msalInstance.getActiveAccount()
   if (!account) throw new Error('No active account')
@@ -74,7 +82,19 @@ async function apiFetchBlob(path, options = {}) {
 export const api = {
   getProjects:      ()           => apiFetch('/api/projects', {}, 'projects'),
   getWeeks:         (id)         => apiFetch(`/api/projects/${id}/weeks`, {}, `weeks:${id}`),
-  getFiles:         (id, week)   => apiFetch(`/api/projects/${id}/weeks/${week}/files`, {}, `files:${id}:${week}`),
+  getBrowse:        (id, path = '') => {
+    const encodedPath = encodeURIComponent(path)
+    return apiFetch(`/api/projects/${id}/browse?path=${encodedPath}`, {}, `browse:${id}:${path}`)
+  },
+  getFiles:         (id, week)   => {
+    const encodedWeek = encodeURIComponent(week)
+    return apiFetch(`/api/projects/${id}/weeks/${encodedWeek}/files`, {}, `files:${id}:${week}`)
+  },
+  refreshIndex:     async ()     => {
+    const result = await apiFetch('/api/index/refresh', { method: 'POST' })
+    clearCachedByPrefixes(['projects', 'weeks:', 'files:'])
+    return result
+  },
   getSasUrl:        (blobPath, minutes = 60) =>
     apiFetch('/api/sas/generate', { method: 'POST', body: JSON.stringify({ blobPath, expiryMinutes: minutes }) }),
   getThumbBlob:     (blobPath, width = 480, quality = 72) =>

@@ -24,16 +24,53 @@ export default function ProjectsPage() {
   const [projects, setProjects] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const [refreshing, setRefreshing] = useState(false)
+  const [refreshMsg, setRefreshMsg] = useState('')
+  const [refreshMsgIsError, setRefreshMsgIsError] = useState(false)
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState('all')
   const nav = useNavigate()
 
+  async function loadProjects({ silent = false } = {}) {
+    if (!silent) {
+      setLoading(true)
+      setError(null)
+    }
+
+    try {
+      const data = await api.getProjects()
+      setProjects(Array.isArray(data) ? data : [])
+    } catch (e) {
+      setError(e.message)
+    } finally {
+      if (!silent) setLoading(false)
+    }
+  }
+
   useEffect(() => {
-    api.getProjects()
-      .then(setProjects)
-      .catch(e => setError(e.message))
-      .finally(() => setLoading(false))
+    loadProjects()
   }, [])
+
+  async function handleRefreshIndex() {
+    setRefreshing(true)
+    setRefreshMsg('')
+    setRefreshMsgIsError(false)
+
+    try {
+      const result = await api.refreshIndex()
+      const stats = result?.stats || {}
+      const projectsCount = Number(stats.projects || 0)
+      const weeksCount = Number(stats.weeksIndexes || 0)
+      const filesCount = Number(stats.filesIndexes || 0)
+      setRefreshMsg(`Indice actualizado: ${projectsCount} proyectos, ${weeksCount} semanas, ${filesCount} archivos.`)
+      await loadProjects({ silent: true })
+    } catch (e) {
+      setRefreshMsgIsError(true)
+      setRefreshMsg(`No se pudo actualizar el indice: ${e.message}`)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   const visibleProjects = projects.filter(p => p.hasContent !== false)
   const pendingProjects = projects.filter(p => statusInfo(p.status) === STATUS_INFO.pendiente)
@@ -81,6 +118,22 @@ export default function ProjectsPage() {
         <div className="stat-box">
           <div className="stat-num" style={{ color: 'var(--red)' }}>{counts.pending}</div>
           <div className="stat-lbl" title={pendingNames || 'No hay proyectos pendientes'}>Pendientes 🔴</div>
+        </div>
+        <div className="index-refresh-box">
+          <button
+            type="button"
+            className="btn btn-primary btn-sm"
+            onClick={handleRefreshIndex}
+            disabled={refreshing}
+            title="Forzar reconstruccion de indices ahora"
+          >
+            {refreshing ? 'Actualizando indice...' : 'Actualizar indice ahora'}
+          </button>
+          {refreshMsg && (
+            <div className={`index-refresh-msg ${refreshMsgIsError ? 'error' : 'ok'}`}>
+              {refreshMsg}
+            </div>
+          )}
         </div>
       </div>
 
