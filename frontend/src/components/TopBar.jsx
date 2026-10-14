@@ -1,5 +1,6 @@
 // src/components/TopBar.jsx
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useMsal } from '@azure/msal-react'
 import { logoutLocal } from '../authConfig'
 
@@ -34,6 +35,7 @@ export default function TopBar({ onMenuClick }) {
       </button>
       <div className="topbar-sep" />
       <div className="topbar-user">
+        <Link className="btn btn-ghost" to="/">Módulos</Link>
         <button
           type="button"
           className="icon-btn"

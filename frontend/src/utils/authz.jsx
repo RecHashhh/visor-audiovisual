@@ -4,12 +4,10 @@
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
 import { api } from './api'
 
-// Si /api/me falla (backend viejo o caído) degradamos a "todo permitido" para
-// no dejar la app inutilizable — el backend nuevo es la fuente real de verdad.
-const ALL_CAPS = { upload: true, manageMedia: true, share: true, refreshIndex: true, manageAccess: true }
+// Sin confirmación del servidor no mostramos contenido ni acciones autorizadas.
 const DEGRADED = {
-  allowed: true, role: 'admin', isAdmin: true, isManager: true,
-  caps: ALL_CAPS, sections: '*', scopes: {}, degraded: true,
+  allowed: false, role: null, isAdmin: false, isManager: false,
+  caps: {}, sections: [], scopes: {}, degraded: true,
 }
 
 const AuthzContext = createContext(null)

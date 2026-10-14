@@ -31,12 +31,12 @@ export default function LoginPage() {
         <aside className="login-brand">
           <div className="login-brand-photo" aria-hidden="true" />
           <div className="login-brand-body">
-            <span className="login-brand-eyebrow">Hub Audiovisual</span>
+            <span className="login-brand-eyebrow">Hub corporativo</span>
             <h2 className="login-brand-title">Todo el contenido de la empresa, en un solo lugar.</h2>
             <ul className="login-brand-points">
-              <li>Fotos y video de obra</li>
-              <li>Logos y marcas oficiales</li>
-              <li>Documentos y plantillas</li>
+              <li>Audiovisual y recursos corporativos</li>
+              <li>Consulta de seguros</li>
+              <li>Accesos según los permisos de tu cuenta</li>
             </ul>
           </div>
         </aside>

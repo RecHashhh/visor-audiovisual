@@ -14,6 +14,7 @@ import { DownloadsProvider } from './utils/downloads'
 // Code splitting por página: la carga inicial solo trae el shell + login;
 // cada sección baja su chunk la primera vez que se visita.
 const HomePage         = lazy(() => import('./pages/HomePage'))
+const ModulesPage      = lazy(() => import('./pages/ModulesPage'))
 const ProjectsPage     = lazy(() => import('./pages/ProjectsPage'))
 const WeeksPage        = lazy(() => import('./pages/WeeksPage'))
 const GalleryPage      = lazy(() => import('./pages/GalleryPage'))
@@ -95,6 +96,7 @@ function AppRoutes() {
         {/* Rutas públicas — sin layout */}
         <Route path="/login"        element={<LoginPage />} />
         <Route path="/share/:token" element={<SharePage />} />
+        <Route path="/" element={<RequireAuth><AuthzProvider><ModulesPage /></AuthzProvider></RequireAuth>} />
 
         {/* Rutas autenticadas — un solo shell para todas las secciones */}
         <Route
@@ -108,7 +110,7 @@ function AppRoutes() {
             </RequireAuth>
           }
         >
-          <Route path="/" element={<HomePage />} />
+          <Route path="/audiovisual" element={<HomePage />} />
 
           <Route path="/proyectos" element={
             <RequireSection section="proyectos"><ProjectsPage /></RequireSection>

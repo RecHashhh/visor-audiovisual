@@ -31,7 +31,7 @@ export default function Sidebar({ open, onNavigate }) {
 
       <nav className="sidebar-nav">
         <NavLink
-          to="/"
+          to="/audiovisual"
           end
           onClick={onNavigate}
           className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}

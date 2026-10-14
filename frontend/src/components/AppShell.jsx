@@ -44,7 +44,7 @@ function NoAccessScreen({ email }) {
 export default function AppShell() {
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
-  const { me, loading } = useAuthz()
+  const { me, loading, refresh } = useAuthz()
 
   useEffect(() => {
     setMobileOpen(false)
@@ -64,6 +64,9 @@ export default function AppShell() {
     )
   }
 
+  if (me?.degraded) {
+    return <div className="noaccess"><div className="noaccess-card"><h1 className="noaccess-title">No pudimos verificar tus accesos</h1><p className="noaccess-text">Intenta nuevamente para continuar.</p><button className="btn btn-ghost" onClick={refresh}>Reintentar</button><a className="btn btn-ghost" href="/">Volver a los módulos</a></div></div>
+  }
   if (me && me.allowed === false) {
     return <NoAccessScreen email={me.email} />
   }
