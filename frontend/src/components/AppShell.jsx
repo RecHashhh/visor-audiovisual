@@ -6,7 +6,7 @@ import TopBar from './TopBar'
 import CommandPalette from './CommandPalette'
 import { useAuthz } from '../utils/authz'
 import { UploadTray } from '../utils/uploads'
-import { logoutLocal } from '../authConfig'
+import { requestLogout } from '../authConfig'
 
 const ROUTE_TITLES = [
   ['/favoritos', 'Favoritos'],
@@ -33,7 +33,7 @@ function NoAccessScreen({ email }) {
           Tu cuenta <strong>{email}</strong> inició sesión correctamente, pero no está
           en la lista de accesos. Pide acceso a la persona que administra el hub.
         </p>
-        <button className="btn btn-ghost" onClick={logoutLocal}>
+        <button className="btn btn-ghost" onClick={requestLogout}>
           Cerrar sesión
         </button>
       </div>

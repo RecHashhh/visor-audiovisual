@@ -45,11 +45,14 @@ export const msalInstance = new PublicClientApplication(msalConfig)
 // login, SIN mandar al usuario al logout global de Microsoft (no lo obliga a
 // cerrar su cuenta Microsoft 365). onRedirectNavigate:()=>false evita el
 // redirect al endpoint de logout del proveedor.
+let logoutPromise
 export function logoutLocal() {
-  const account = msalInstance.getActiveAccount() || msalInstance.getAllAccounts()[0] || undefined
-  return msalInstance
-    .logoutRedirect({ account, onRedirectNavigate: () => false })
-    .then(() => { window.location.assign('/') })
-    .catch(() => { window.location.assign('/') })
+  if (logoutPromise) return logoutPromise
+  logoutPromise = msalInstance.clearCache()
+    .then(() => { window.location.assign('/login') })
+    .catch(error => { logoutPromise = undefined; throw error })
+  return logoutPromise
 }
 
+
+export function requestLogout() { window.location.assign('/salir') }

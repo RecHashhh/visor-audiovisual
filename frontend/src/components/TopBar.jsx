@@ -2,7 +2,7 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useMsal } from '@azure/msal-react'
-import { logoutLocal } from '../authConfig'
+import { requestLogout } from '../authConfig'
 
 function currentTheme() {
   return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
@@ -68,7 +68,7 @@ export default function TopBar({ onMenuClick }) {
         </button>
         <span>{user?.username || user?.name}</span>
         <div className="topbar-avatar">{initials}</div>
-        <button className="btn-logout" onClick={logoutLocal}>
+        <button className="btn-logout" onClick={requestLogout}>
           Salir
         </button>
       </div>

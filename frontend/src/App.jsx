@@ -15,6 +15,7 @@ import { DownloadsProvider } from './utils/downloads'
 // cada sección baja su chunk la primera vez que se visita.
 const HomePage         = lazy(() => import('./pages/HomePage'))
 const ModulesPage      = lazy(() => import('./pages/ModulesPage'))
+const LogoutPage       = lazy(() => import('./pages/LogoutPage'))
 const ProjectsPage     = lazy(() => import('./pages/ProjectsPage'))
 const WeeksPage        = lazy(() => import('./pages/WeeksPage'))
 const GalleryPage      = lazy(() => import('./pages/GalleryPage'))
@@ -95,6 +96,7 @@ function AppRoutes() {
         <Routes>
         {/* Rutas públicas — sin layout */}
         <Route path="/login"        element={<LoginPage />} />
+        <Route path="/salir"        element={<LogoutPage />} />
         <Route path="/share/:token" element={<SharePage />} />
         <Route path="/" element={<RequireAuth><AuthzProvider><ModulesPage /></AuthzProvider></RequireAuth>} />
 
