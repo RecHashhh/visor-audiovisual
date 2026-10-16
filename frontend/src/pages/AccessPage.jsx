@@ -215,6 +215,7 @@ export default function AccessPage() {
               key={u.email}
               user={u}
               isSelf={u.email === selfEmail}
+              sections={sections}
               sectionItems={sectionItems}
               onPatch={patch => patchUser(idx, patch)}
               onSetRole={role => setRole(idx, role)}
@@ -250,7 +251,7 @@ function Chevron({ open, small }) {
   )
 }
 
-function UserRow({ user: u, isSelf, sectionItems, onPatch, onSetRole, onToggleCap, onRemove }) {
+function UserRow({ user: u, isSelf, sections, sectionItems, onPatch, onSetRole, onToggleCap, onRemove }) {
   const canManageAll = u.caps.manageAccess
   const [open, setOpen] = useState(false)
   const [openSecs, setOpenSecs] = useState(() => new Set())
