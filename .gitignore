@@ -12,3 +12,7 @@ local.settings.json
 frontend/.shots/
 .impeccable/
 a.py
+.playwright-mcp/
+
+# Originales de marca (la app usa las versiones de frontend/public/brands/)
+/RIPCONCIV_*.png

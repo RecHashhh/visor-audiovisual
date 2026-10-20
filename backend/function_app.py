@@ -1643,6 +1643,26 @@ def share_resolve(req: func.HttpRequest) -> func.HttpResponse:
 
     remaining = max(int((expires_at - datetime.now(timezone.utc)).total_seconds() / 60), 5)
 
+    def with_play_url(files: list) -> list:
+        """Añade playUrl (la copia liviana) a los videos que la tienen. Un solo
+        listado de _proxies/ por proyecto, no una consulta por archivo."""
+        videos = [f for f in files if f["path"].lower().endswith(PROXYABLE_VIDEO_EXT)]
+        if not videos:
+            return files
+        cc = get_blob_service().get_container_client(CONTAINER)
+        roots = {f["path"].split("/")[0] for f in videos}
+        proxies = set()
+        for root in roots:
+            proxies.update(b.name for b in cc.list_blobs(name_starts_with=f"{PROXIES_PREFIX.strip('/')}/{root}/"))
+        for f in videos:
+            proxy = proxy_sidecar_name(f["path"])
+            if proxy in proxies:
+                try:
+                    f["playUrl"] = make_sas_url(proxy, remaining)
+                except Exception:
+                    pass
+        return files
+
     # Colección de favoritos: el share lleva una lista explícita de rutas.
     if share.get("type") == "collection" or isinstance(share.get("files"), list):
         try:
@@ -1658,7 +1678,7 @@ def share_resolve(req: func.HttpRequest) -> func.HttpResponse:
                 except Exception:
                     sas_url = ""
                 files.append({"name": fname, "path": p, "type": type_of(fname), "sasUrl": sas_url})
-            return ok({**share, "files": files})
+            return ok({**share, "files": with_play_url(files)})
         except Exception as exc:
             logging.error("share_resolve collection: %s", exc)
             return err(str(exc), 500)
@@ -1682,7 +1702,7 @@ def share_resolve(req: func.HttpRequest) -> func.HttpResponse:
             files.append({"name": fname, "path": blob.name, "type": type_of(fname), "sasUrl": sas_url})
 
         files.sort(key=lambda f: f["name"])
-        return ok({**share, "files": files})
+        return ok({**share, "files": with_play_url(files)})
 
     except Exception as exc:
         logging.error("share_resolve: %s", exc)

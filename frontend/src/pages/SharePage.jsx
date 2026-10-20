@@ -3,6 +3,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useDownloads } from '../utils/downloads'
+import SmartVideo from '../components/SmartVideo'
 
 const IMG_EXTS  = ['jpg','jpeg','png','tiff','tif','webp']
 const VID_EXTS  = ['mp4','mov','avi']
@@ -52,16 +53,6 @@ function readImageDimensions(url) {
   })
 }
 
-function readVideoDimensions(url) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    video.preload = 'metadata'
-    video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight })
-    video.onerror = () => reject(new Error('No se pudo leer metadata del video'))
-    video.src = url
-  })
-}
-
 async function downloadAsFile(url, filename) {
   const res = await fetch(url)
   if (!res.ok) throw new Error('No se pudo descargar el archivo')
@@ -101,12 +92,19 @@ export default function SharePage() {
 
     if (kind !== 'img' && kind !== 'vid') return
 
+    // En video la resolución la entrega el propio reproductor (onVideoMeta).
+    if (kind === 'vid') return
+
     try {
-      const meta = kind === 'img' ? await readImageDimensions(url) : await readVideoDimensions(url)
+      const meta = await readImageDimensions(url)
       setViewer(curr => curr && curr.url === url ? { ...curr, ...meta, metaLoading: false } : curr)
     } catch {
       setViewer(curr => curr && curr.url === url ? { ...curr, metaLoading: false } : curr)
     }
+  }
+
+  const onVideoMeta = (url, meta) => {
+    setViewer(curr => curr && curr.url === url ? { ...curr, ...meta, metaLoading: false } : curr)
   }
 
   const navViewer = async (dir) => {
@@ -191,7 +189,19 @@ export default function SharePage() {
 
           {viewer.kind === 'vid' && (
             <div className="lightbox-media-wrap">
-              <video className="lightbox-video" controls autoPlay src={viewer.url}>Tu navegador no soporta video.</video>
+              {viewer.unsupported ? (
+                <div className="lightbox-file-fallback">
+                  Este video no se puede reproducir en el navegador. Descárgalo para verlo.
+                </div>
+              ) : (
+                // playUrl: copia liviana si existe. Descargar sigue usando viewer.url (original).
+                <SmartVideo
+                  src={viewer.file.playUrl || viewer.url}
+                  className="lightbox-video"
+                  onLoadedMetadata={e => onVideoMeta(viewer.url, { width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
+                  onUnsupported={() => onVideoMeta(viewer.url, { unsupported: true })}
+                />
+              )}
             </div>
           )}
 
