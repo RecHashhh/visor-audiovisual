@@ -2,7 +2,8 @@
 import { useIsAuthenticated, useMsal } from '@azure/msal-react'
 import { InteractionStatus } from '@azure/msal-browser'
 import { lazy, Suspense, useEffect, Fragment } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-dom'
+import { installServiceLinks, finishServiceLoading } from './utils/service-loading'
 import LoginPage      from './pages/LoginPage'
 import AppShell       from './components/AppShell'
 import { SectionsProvider, useSections } from './utils/sections'
@@ -31,8 +32,9 @@ const SharesPage       = lazy(() => import('./pages/SharesPage'))
 
 function PageLoader() {
   return (
-    <div className="loading" style={{ minHeight: '40vh' }}>
+    <div className="loading" role="status" style={{ minHeight: '40vh' }}>
       <div className="spinner" />
+      <span>Cargando servicios…</span>
     </div>
   )
 }
@@ -63,6 +65,10 @@ function RequireAuth({ children }) {
 }
 
 export default function App() {
+  const navigate = useNavigate()
+  const location = useLocation()
+  useEffect(() => installServiceLinks(navigate), [navigate])
+  useEffect(() => { let second; const first = requestAnimationFrame(() => { second = requestAnimationFrame(finishServiceLoading) }); return () => { cancelAnimationFrame(first); cancelAnimationFrame(second) } }, [location.key])
   const isAuth = useIsAuthenticated()
   const { inProgress } = useMsal()
   const ready = isAuth && inProgress === InteractionStatus.None

@@ -6,6 +6,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { msalInstance } from './authConfig'
 import App from './App'
 import './index.css'
+import './service-loading.css'
 
 msalInstance.initialize().then(() => {
   // Procesar el redirect de Microsoft ANTES de cualquier cosa

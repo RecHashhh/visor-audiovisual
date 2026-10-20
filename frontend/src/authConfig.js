@@ -1,5 +1,6 @@
 // src/authConfig.js
 import { PublicClientApplication } from '@azure/msal-browser'
+import { navigateWithLoading } from './utils/service-loading'
 
 // Valores inyectados en index.html por el CI/CD (window.__APP_CONFIG__)
 // En desarrollo local: copiar .env.example a .env.local y completar
@@ -55,4 +56,4 @@ export function logoutLocal() {
 }
 
 
-export function requestLogout() { window.location.assign('/salir') }
+export function requestLogout() { navigateWithLoading(() => window.location.assign('/salir'), 'Cerrando sesión para volver al Hub.') }
