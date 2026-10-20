@@ -1,0 +1,75 @@
+name: Copias livianas de video
+
+# Convierte a MP4 H.264 los videos que el navegador no reproduce (ProRes,
+# HEVC…) y deja la copia en _proxies/<ruta>.mp4, que es la que el visor
+# reproduce. El original no se toca: Descargar sigue entregándolo.
+#
+# Se ejecuta en el runner de Ubuntu para no pasar GB de video por la red de la
+# oficina. Solo convierte lo que aún no tiene copia, así que las corridas
+# programadas sin material nuevo terminan en un par de minutos.
+#
+# Requiere el mismo secret que las miniaturas:
+#   AZURE_STORAGE_CONNECTION_STRING
+
+on:
+  schedule:
+    # Una vez al día, de madrugada en Ecuador (UTC-5).
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      prefix:
+        description: 'Solo esta ruta, p. ej. 00000_hospital-manta/ (vacío = todo)'
+        required: false
+        default: ''
+      ext:
+        description: 'Extensiones a revisar, separadas por espacio'
+        required: false
+        default: '.mov'
+      force:
+        description: 'Regenerar también las copias que ya existen'
+        type: boolean
+        required: false
+        default: false
+
+concurrency:
+  group: video-proxies
+  cancel-in-progress: false
+
+jobs:
+  proxies:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Instalar ffmpeg
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffmpeg -version | head -1
+
+      - name: Instalar dependencias de Python
+        run: pip install --quiet azure-storage-blob
+
+      - name: Generar copias livianas
+        env:
+          AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+          BLOB_CONTAINER: audiovisual
+          PREFIX: ${{ inputs.prefix }}
+          EXT: ${{ inputs.ext }}
+          FORCE: ${{ inputs.force }}
+        run: |
+          if [ -z "$AZURE_STORAGE_CONNECTION_STRING" ]; then
+            echo "::error::Falta el secret AZURE_STORAGE_CONNECTION_STRING en la configuración del repositorio."
+            exit 1
+          fi
+          ARGS=(--ext ${EXT:-.mov})
+          [ -n "$PREFIX" ] && ARGS+=(--prefix "$PREFIX")
+          [ "$FORCE" = "true" ] && ARGS+=(--force)
+          python backend/tools/make_video_proxies.py "${ARGS[@]}"

@@ -6,6 +6,7 @@ import { fetchThumb } from '../utils/thumbs'
 import { useFavorites } from '../utils/favorites'
 import { useDownloads } from '../utils/downloads'
 import Modal from '../components/Modal'
+import SmartVideo from '../components/SmartVideo'
 
 // Corazón (relleno = ya es favorito)
 function HeartIcon({ filled }) {
@@ -76,16 +77,6 @@ function readImageDimensions(url) {
     img.onload = () => resolve({ width: img.naturalWidth, height: img.naturalHeight })
     img.onerror = () => reject(new Error('No se pudo leer metadata de la imagen'))
     img.src = url
-  })
-}
-
-function readVideoDimensions(url) {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement('video')
-    video.preload = 'metadata'
-    video.onloadedmetadata = () => resolve({ width: video.videoWidth, height: video.videoHeight })
-    video.onerror = () => reject(new Error('No se pudo leer metadata del video'))
-    video.src = url
   })
 }
 
@@ -229,7 +220,9 @@ export default function GalleryPage() {
 
     let url = null
     try {
-      url = await getSas(file.path)
+      // Video: copia liviana si existe. Va aparte de getSas para que Descargar
+      // (que usa ese caché) siga entregando siempre el original.
+      url = kind === 'vid' ? (await api.getPlaybackUrl(file.path)).sasUrl : await getSas(file.path)
       if (viewerRequestIdRef.current !== requestId) return
       setViewer((curr) => {
         if (!curr || curr.file?.path !== file.path) return curr
@@ -244,8 +237,12 @@ export default function GalleryPage() {
       return
     }
 
+    // En video la resolución la entrega el propio reproductor (onVideoMeta):
+    // un segundo <video> oculto competiría por la red con el que se ve.
+    if (kind === 'vid') return
+
     try {
-      const meta = kind === 'img' ? await readImageDimensions(url) : await readVideoDimensions(url)
+      const meta = await readImageDimensions(url)
       setViewer((curr) => {
         if (!curr || curr.url !== url) return curr
         return { ...curr, ...meta, metaLoading: false }
@@ -256,6 +253,13 @@ export default function GalleryPage() {
         return { ...curr, metaLoading: false }
       })
     }
+  }
+
+  const onVideoMeta = (url, meta) => {
+    setViewer((curr) => {
+      if (!curr || curr.url !== url) return curr
+      return { ...curr, ...meta, metaLoading: false }
+    })
   }
 
   const openItem = async (file, idx) => {
@@ -531,8 +535,20 @@ export default function GalleryPage() {
                   <img className="gallery-preview-img" src={viewer.url} alt={viewer.file?.name || 'preview'} />
                 )}
 
-                {!viewer.urlLoading && viewer.kind === 'vid' && viewer.url && (
-                  <video className="gallery-preview-video" controls autoPlay src={viewer.url}>Tu navegador no soporta video.</video>
+                {!viewer.urlLoading && viewer.kind === 'vid' && viewer.url && !viewer.unsupported && (
+                  <SmartVideo
+                    src={viewer.url}
+                    className="gallery-preview-video"
+                    onLoadedMetadata={e => onVideoMeta(viewer.url, { width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
+                    onUnsupported={() => onVideoMeta(viewer.url, { unsupported: true })}
+                  />
+                )}
+
+                {!viewer.urlLoading && viewer.kind === 'vid' && viewer.unsupported && (
+                  <div className="gallery-preview-empty">
+                    <div className="gallery-preview-emptyTitle">Este video no se puede reproducir en el navegador</div>
+                    <div className="gallery-preview-emptyText">Su formato (por ejemplo ProRes o HEVC) no es compatible. Descárgalo para verlo.</div>
+                  </div>
                 )}
 
                 {!viewer.urlLoading && (viewer.kind === 'img' || viewer.kind === 'vid') && !viewer.url && (

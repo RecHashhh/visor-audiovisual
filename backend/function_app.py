@@ -51,6 +51,10 @@ MEDIA_PREFIX = os.environ.get("MEDIA_PREFIX", "_media")
 # quien sube el material (ver ripcon_av_uploader.ipynb); si no existe, el
 # frontend se queda con el ícono de tipo.
 THUMBS_PREFIX = os.environ.get("THUMBS_PREFIX", "_thumbs")
+# Copias livianas (MP4 H.264) de videos que el navegador no reproduce, como
+# ProRes: _proxies/<ruta del archivo>.mp4. Las genera tools/make_video_proxies.py;
+# el visor las prefiere para reproducir y la descarga sigue dando el original.
+PROXIES_PREFIX = os.environ.get("PROXIES_PREFIX", "_proxies")
 
 # ── Identidad y accesos ────────────────────────────────────────────────────
 # AUTH_MODE: "lax" (por defecto) decodifica los claims y verifica tenant + expiración,
@@ -369,12 +373,14 @@ def should_skip_for_content_index(blob_name: str) -> bool:
     config_prefix = f"{CONFIG_PREFIX.strip('/')}/"
     media_prefix = f"{MEDIA_PREFIX.strip('/')}/"
     thumbs_prefix = f"{THUMBS_PREFIX.strip('/')}/"
+    proxies_prefix = f"{PROXIES_PREFIX.strip('/')}/"
     return (
         blob_name.startswith(shares_prefix)
         or blob_name.startswith(index_prefix)
         or blob_name.startswith(config_prefix)
         or blob_name.startswith(media_prefix)
         or blob_name.startswith(thumbs_prefix)
+        or blob_name.startswith(proxies_prefix)
     )
 
 def load_json_blob(blob_name: str) -> Optional[Any]:
@@ -547,6 +553,13 @@ def thumb_sidecar_name(blob_path: str) -> str:
     """Ruta de la miniatura precalculada de un archivo no-imagen.
     _media/documentos/Plantillas/informe.docx → _thumbs/_media/documentos/Plantillas/informe.docx.jpg"""
     return f"{THUMBS_PREFIX.strip('/')}/{blob_path.strip('/')}.jpg"
+
+PROXYABLE_VIDEO_EXT = (".mov", ".mp4", ".m4v")
+
+def proxy_sidecar_name(blob_path: str) -> str:
+    """Ruta de la copia liviana de un video.
+    00000_hospital-manta/2020_S20/VID_001.mov → _proxies/00000_hospital-manta/2020_S20/VID_001.mov.mp4"""
+    return f"{PROXIES_PREFIX.strip('/')}/{blob_path.strip('/')}.mp4"
 
 def blob_exists(blob_name: str) -> bool:
     try:
@@ -1523,8 +1536,16 @@ def sas_generate(req: func.HttpRequest) -> func.HttpResponse:
         _, auth_err = require_blob_access(req, blob_path)
         if auth_err:
             return auth_err
-        sas_url = make_sas_url(blob_path, expiry_minutes)
-        return ok({"sasUrl": sas_url, "expiresInMinutes": expiry_minutes})
+        # preferProxy: para reproducir, entrega la copia liviana si existe. El
+        # permiso se valida contra el original, nunca contra la ruta _proxies/.
+        served_path = blob_path
+        if body.get("preferProxy") and blob_path.lower().endswith(PROXYABLE_VIDEO_EXT):
+            proxy = proxy_sidecar_name(blob_path)
+            if blob_exists(proxy):
+                served_path = proxy
+        sas_url = make_sas_url(served_path, expiry_minutes)
+        return ok({"sasUrl": sas_url, "expiresInMinutes": expiry_minutes,
+                   "proxy": served_path != blob_path})
     except Exception as exc:
         logging.error("sas_generate: %s", exc)
         return err(str(exc), 500)
@@ -2171,7 +2192,8 @@ def media_delete(req: func.HttpRequest) -> func.HttpResponse:
 
 
 def _delete_blobs(cc, names: list) -> int:
-    """Borra blobs uno a uno y arrastra su miniatura precalculada de _thumbs/.
+    """Borra blobs uno a uno y arrastra su miniatura de _thumbs/ y, si es
+    video, su copia liviana de _proxies/.
     Un 404 no es error: la meta es que el blob no exista al terminar.
 
     De más profundo a menos: en cuentas HNS un marcador de directorio no se puede
@@ -2179,7 +2201,10 @@ def _delete_blobs(cc, names: list) -> int:
     antes que la carpeta que los contiene."""
     deleted = 0
     for name in sorted(set(names), key=lambda n: n.count("/"), reverse=True):
-        for target in (name, thumb_sidecar_name(name)):
+        targets = [name, thumb_sidecar_name(name)]
+        if name.lower().endswith(PROXYABLE_VIDEO_EXT):
+            targets.append(proxy_sidecar_name(name))
+        for target in targets:
             try:
                 cc.delete_blob(target)
                 if target == name:

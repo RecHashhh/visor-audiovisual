@@ -129,6 +129,10 @@ export const api = {
   },
   getSasUrl:        (blobPath, minutes = 60) =>
     apiFetch('/api/sas/generate', { method: 'POST', body: JSON.stringify({ blobPath, expiryMinutes: minutes }) }),
+  // Para reproducir video: si existe la copia liviana (_proxies/) entrega esa;
+  // si no, el original. No usar para descargar.
+  getPlaybackUrl:   (blobPath, minutes = 120) =>
+    apiFetch('/api/sas/generate', { method: 'POST', body: JSON.stringify({ blobPath, expiryMinutes: minutes, preferProxy: true }) }),
   getThumbBlob:     (blobPath, width = 480, quality = 72, mode = '') =>
     apiFetchBlob(`/api/thumb?blobPath=${encodeURIComponent(blobPath)}&w=${width}&q=${quality}${mode ? `&mode=${mode}` : ''}`),
 
