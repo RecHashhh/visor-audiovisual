@@ -29,20 +29,39 @@ export async function fetchHelpdeskAccess(instance, account, settings = {}, { si
   } catch { return null }
   finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
 }
+const VISIBILITY_MS = 10 * 60 * 1000
+function readVisibility(key) {
+  try {
+    const hit = key && JSON.parse(sessionStorage.getItem(key) || 'null')
+    return hit && Date.now() - hit.at < VISIBILITY_MS ? hit.visible === true : null
+  } catch { return null }
+}
+function writeVisibility(key, visible) {
+  try { if (key) sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), visible })) } catch { /* sin almacenamiento */ }
+}
+/** Enlace con la cuenta del Hub (login_hint): Microsoft entra en silencio, sin selector de cuentas. */
+export function withLoginHint(module, account) {
+  const hint = String(account?.username || '').trim().toLowerCase()
+  return module && /^[^\s@]{1,64}@[^\s@]{1,190}$/.test(hint) ? { ...module, href: module.href + '&login_hint=' + encodeURIComponent(hint) } : module
+}
 export function useHelpdeskAccess(instance, account, authorization, settings = {}) {
-  const [result, setResult] = useState(null)
   const entry = helpdeskModule(settings)?.href
   const identity = account?.homeAccountId || account?.localAccountId || account?.username
+  const key = identity && entry ? 'hub-helpdesk:' + identity + ':' + entry : null
+  // Último resultado conocido (10 min, por pestaña): la tarjeta aparece al instante y se revalida detrás
+  const [visible, setVisible] = useState(() => readVisibility(key))
   const allowed = authorization?.allowed === true && !authorization?.degraded
   useEffect(() => {
     const controller = new AbortController()
-    setResult(null)
+    setVisible(readVisibility(key))
     if (allowed && account && entry) {
       fetchHelpdeskAccess(instance, account, settings, { signal: controller.signal }).then(module => {
-        if (!controller.signal.aborted) setResult({ identity, entry, module })
+        if (controller.signal.aborted) return
+        setVisible(!!module)
+        writeVisibility(key, !!module)
       })
     }
     return () => controller.abort()
-  }, [instance, identity, entry, allowed])
-  return allowed && result?.identity === identity && result?.entry === entry ? result.module : null
+  }, [instance, key, allowed])
+  return allowed && visible ? withLoginHint(helpdeskModule(settings), account) : null
 }

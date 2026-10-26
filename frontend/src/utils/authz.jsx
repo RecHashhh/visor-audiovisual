@@ -2,7 +2,22 @@
 // Contexto de permisos: consulta /api/me una vez por sesión y expone helpers
 // para que el shell, las rutas y las páginas decidan qué mostrar/permitir.
 import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { useMsal } from '@azure/msal-react'
 import { api } from './api'
+
+// Última respuesta de /api/me por cuenta y por pestaña (10 min): los módulos aparecen al instante y se
+// confirman con el servidor en segundo plano. Solo presentación: el servidor sigue autorizando cada petición.
+const CACHE_MS = 10 * 60 * 1000
+const cacheKey = account => account ? 'hub-authz:' + (account.homeAccountId || account.localAccountId || account.username) : null
+function readCache(key) {
+  try {
+    const hit = key && JSON.parse(sessionStorage.getItem(key) || 'null')
+    return hit && Date.now() - hit.at < CACHE_MS && hit.data?.allowed !== undefined ? hit.data : null
+  } catch { return null }
+}
+function writeCache(key, data) {
+  try { if (key) data?.degraded ? sessionStorage.removeItem(key) : sessionStorage.setItem(key, JSON.stringify({ at: Date.now(), data })) } catch { /* sin almacenamiento */ }
+}
 
 // Sin confirmación del servidor no mostramos contenido ni acciones autorizadas.
 const DEGRADED = {
@@ -13,16 +28,19 @@ const DEGRADED = {
 const AuthzContext = createContext(null)
 
 export function AuthzProvider({ children }) {
-  const [me, setMe] = useState(null)
-  const [loading, setLoading] = useState(true)
+  const { instance, accounts } = useMsal()
+  const key = cacheKey(instance.getActiveAccount() || accounts[0])
+  const [me, setMe] = useState(() => readCache(key))
+  const [loading, setLoading] = useState(() => !readCache(key))
 
   const refresh = useCallback(() => {
-    setLoading(true)
+    // Con caché, se revalida sin volver a mostrar «Verificando tus accesos…»
+    if (!readCache(key)) setLoading(true)
     return api.getMe()
-      .then(data => setMe(data))
-      .catch(() => setMe(DEGRADED))
+      .then(data => { setMe(data); writeCache(key, data) })
+      .catch(() => { setMe(DEGRADED); writeCache(key, DEGRADED) })
       .finally(() => setLoading(false))
-  }, [])
+  }, [key])
 
   useEffect(() => { refresh() }, [refresh])
 

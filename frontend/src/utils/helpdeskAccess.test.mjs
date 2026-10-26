@@ -28,3 +28,12 @@ test('Mesa limita a cinco segundos incluso si MSAL no responde', async () => {
   assert.equal(await fetchHelpdeskAccess({ acquireTokenSilent: () => new Promise(() => {}) }, account), null)
   assert.ok(Date.now() - start < 6000)
 })
+
+test('login_hint: añade la cuenta del Hub al enlace solo si es un correo válido', async () => {
+  const { withLoginHint } = await import('./helpdeskAccess.js')
+  const module = { id: 'helpdesk', href: 'https://mesa.example/api/auth/microsoft/start?entry=hub' }
+  assert.equal(withLoginHint(module, { username: 'AGarzon@ripconciv.com' }).href, module.href + '&login_hint=agarzon%40ripconciv.com')
+  assert.equal(withLoginHint(module, { username: 'sin correo' }).href, module.href)
+  assert.equal(withLoginHint(module, undefined).href, module.href)
+  assert.equal(withLoginHint(null, { username: 'a@b.c' }), null)
+})
