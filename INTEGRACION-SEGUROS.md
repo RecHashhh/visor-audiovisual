@@ -11,3 +11,11 @@ Seguros recibe el acceso en `/api/auth/microsoft/start?entry=hub`, con OIDC y PK
 Antes de publicar el Hub, desplegar Seguros y activar la configuración de `docs/ACCESO-REVISION.md` de ese repositorio. Cada módulo conserva su sesión local; cerrar sesión en una aplicación no cierra Microsoft 365 ni las otras aplicaciones. No se ha implementado cierre global del Hub.
 
 Validación: build de Vite, prueba de visibilidad del selector, navegador en 1440/768/390 px, navegación Audiovisual → Módulos, usuario sin ficha de Seguros y recuperación de errores de permisos. El recorrido Microsoft real con las cuatro cuentas se debe comprobar después de publicar; las pruebas locales no simulan consentimiento ni políticas del tenant.
+
+## Tesorería · 28-oct-2026
+
+La ficha «Tesorería» se habilita para todas las cuentas cuyo acceso al Hub esté confirmado, incluidas las que no tienen secciones de Audiovisual. No tiene lista de revisión ni restricción por grupo en esta etapa. La restricción por grupo queda pendiente de una decisión posterior del responsable.
+
+El destino confirmado en el despliegue de `RIPCONCIV/RPC-TESORERIAWEB` es `https://appweb-tesoreriaweb-ahend3bzcpecaffv.eastus-01.azurewebsites.net/`. La raíz y `/api/salud` respondieron 200 durante la comprobación. Se configura con `treasuryUrl` y `treasuryEnabled` en `window.__APP_CONFIG__.hubModules`; se exige un origen HTTPS sin credenciales, ruta adicional, parámetros ni fragmento.
+
+Tesorería usa su propio inicio de sesión Microsoft y valida sus tokens en el servidor. No se intercambian tokens ni cookies entre aplicaciones. La ficha permite abrir el sistema; Tesorería conserva los roles existentes y las cuentas desactivadas siguen bloqueadas. Las cuentas corporativas nuevas pueden iniciar sesión y requieren que Administración les asigne un perfil para ver información. No se amplían permisos financieros al agregar la ficha al Hub.

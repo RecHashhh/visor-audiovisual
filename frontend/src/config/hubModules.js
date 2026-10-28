@@ -2,6 +2,8 @@
 const defaults = {
   helpdeskUrl: 'https://help.ripconciv.com',
   helpdeskEnabled: true,
+  treasuryUrl: 'https://appweb-tesoreriaweb-ahend3bzcpecaffv.eastus-01.azurewebsites.net',
+  treasuryEnabled: true,
   insuranceUrl: 'https://ripconciv-seguros-web-dcajb6cng8fkg3et.eastus-01.azurewebsites.net',
   insuranceEnabled: true,
   insuranceReviewEmails: ['dmesias@ripconciv.com', 'jmorales@ripconciv.com', 'gnaranjo@ripconciv.com'],
@@ -27,7 +29,17 @@ export function availableModules(account, authorization, settings = {}) {
   const oidAllowed = Array.isArray(config.insuranceReviewOids) && config.insuranceReviewOids.some(value => String(value).toLowerCase() === oid)
   const href = insuranceEntry(config)
   if (config.insuranceEnabled === true && href && (emailAllowed || oidAllowed)) modules.push({ id: 'insurance', title: 'Consulta de seguros', description: 'Consulta el personal asegurado, sus pólizas y vigencias.', href, external: true })
+  const treasuryHref = treasuryEntry(config)
+  if (config.treasuryEnabled === true && treasuryHref) modules.push({ id: 'treasury', title: 'Tesorería', description: 'Consulta facturas, propuestas y el flujo de pagos.', href: treasuryHref, external: true })
   return modules
+}
+
+export function treasuryEntry(settings = {}) {
+  try {
+    const url = new URL(settings.treasuryUrl || defaults.treasuryUrl)
+    if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null
+    return url.origin + '/'
+  } catch { return null }
 }
 
 export function helpdeskEntry(settings = {}) {
