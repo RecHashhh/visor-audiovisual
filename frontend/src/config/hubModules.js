@@ -1,6 +1,6 @@
 // Configuración pública: determina la presentación; cada servidor autoriza el acceso.
 const defaults = {
-  helpdeskUrl: 'https://app-rpc-helpdeskweb.azurewebsites.net',
+  helpdeskUrl: 'https://help.ripconciv.com',
   helpdeskEnabled: true,
   insuranceUrl: 'https://ripconciv-seguros-web-dcajb6cng8fkg3et.eastus-01.azurewebsites.net',
   insuranceEnabled: true,

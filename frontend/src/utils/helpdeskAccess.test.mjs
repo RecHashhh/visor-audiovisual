@@ -7,7 +7,7 @@ const msal = { acquireTokenSilent: async () => ({ idToken: 'silent-id-token', ac
 const good = { ok: true, json: async () => ({ visible: true, href: helpdeskEntry() }) }
 test('Mesa usa ID token sin credenciales y permite solo destino esperado', async () => {
   const card = await fetchHelpdeskAccess(msal, account, {}, { fetcher: async (url, options) => {
-    assert.equal(url, 'https://app-rpc-helpdeskweb.azurewebsites.net/api/hub/visibility')
+    assert.equal(url, 'https://help.ripconciv.com/api/hub/visibility')
     assert.equal(options.headers.Authorization, 'Bearer silent-id-token')
     assert.equal(options.credentials, 'omit')
     return good

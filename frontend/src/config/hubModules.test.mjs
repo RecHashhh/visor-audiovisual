@@ -19,7 +19,7 @@ test('selector: permisos confirmados, revisión limitada y destino seguro', () =
 })
 
 test('Mesa: origen HTTPS y módulo configurable', () => {
-  assert.equal(helpdeskEntry(), 'https://app-rpc-helpdeskweb.azurewebsites.net/api/auth/microsoft/start?entry=hub')
+  assert.equal(helpdeskEntry(), 'https://help.ripconciv.com/api/auth/microsoft/start?entry=hub')
   assert.equal(helpdeskModule().id, 'helpdesk')
   assert.equal(helpdeskModule({ helpdeskEnabled: false }), null)
   assert.equal(helpdeskEntry({ helpdeskUrl: 'https://mesa.example/' }), 'https://mesa.example/api/auth/microsoft/start?entry=hub')
