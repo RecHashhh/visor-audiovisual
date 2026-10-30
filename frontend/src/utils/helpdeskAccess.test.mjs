@@ -14,9 +14,12 @@ test('Mesa usa ID token sin credenciales y permite solo destino esperado', async
   } })
   assert.equal(card.id, 'helpdesk')
 })
-test('Mesa falla cerrada ante errores, denegación, destino ajeno o módulo deshabilitado', async () => {
-  for (const fetcher of [async () => { throw Error('offline') }, async () => ({ ok: false }), async () => ({ ok: true, json: async () => ({ visible: false }) }), async () => ({ ok: true, json: async () => ({ visible: true, href: 'https://other.example' }) })]) {
+test('Mesa distingue denegación (false) de fallo de red (null) y nunca muestra un destino ajeno', async () => {
+  for (const fetcher of [async () => { throw Error('offline') }, async () => ({ ok: false, status: 503 })]) {
     assert.equal(await fetchHelpdeskAccess(msal, account, {}, { fetcher }), null)
+  }
+  for (const fetcher of [async () => ({ ok: false, status: 401 }), async () => ({ ok: true, json: async () => ({ visible: false }) }), async () => ({ ok: true, json: async () => ({ visible: true, href: 'https://other.example' }) })]) {
+    assert.equal(await fetchHelpdeskAccess(msal, account, {}, { fetcher }), false)
   }
   assert.equal(await fetchHelpdeskAccess(msal, account, { helpdeskEnabled: false }, { fetcher: async () => { throw Error('must not call') } }), null)
 })

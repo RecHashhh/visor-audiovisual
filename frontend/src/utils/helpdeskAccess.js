@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { helpdeskModule } from '../config/hubModules.js'
 
+/** Devuelve el módulo si la Mesa confirma acceso, `false` si lo niega y `null` si no se pudo consultar. */
 export async function fetchHelpdeskAccess(instance, account, settings = {}, { signal, fetcher = fetch, timeoutMs = 12000 } = {}) {
   const module = helpdeskModule(settings)
   if (!account || !module) return null
@@ -21,20 +22,23 @@ export async function fetchHelpdeskAccess(instance, account, settings = {}, { si
         if (!token || controller.signal.aborted) return null
         const origin = new URL(module.href).origin
         const response = await fetcher(origin + '/api/hub/visibility', { method: 'GET', headers: { Authorization: 'Bearer ' + token }, credentials: 'omit', signal: controller.signal, cache: 'no-store' })
-        if (!response.ok || controller.signal.aborted) return null
+        if (controller.signal.aborted) return null
+        if (response.status === 401 || response.status === 403) return false
+        if (!response.ok) return null
         const result = await response.json()
-        return result.visible === true && result.href === module.href ? module : null
+        return result.visible === true && result.href === module.href ? module : false
       })(),
     ])
   } catch { return null }
   finally { clearTimeout(timer); signal?.removeEventListener('abort', abort) }
 }
-// Caché de 12 h compartida entre pestañas: la tarjeta aparece con las demás y se revalida detrás
-const VISIBILITY_MS = 12 * 60 * 60 * 1000
+// Caché compartida entre pestañas: un «sí» dura 12 h y un «no» 10 min. Un fallo de red nunca se guarda.
+const VISIBLE_MS = 12 * 60 * 60 * 1000
+const HIDDEN_MS = 10 * 60 * 1000
 function readVisibility(key) {
   try {
     const hit = key && JSON.parse(localStorage.getItem(key) || 'null')
-    return hit && Date.now() - hit.at < VISIBILITY_MS ? hit.visible === true : null
+    return hit && Date.now() - hit.at < (hit.visible === true ? VISIBLE_MS : HIDDEN_MS) ? hit.visible === true : null
   } catch { return null }
 }
 function writeVisibility(key, visible) {
@@ -48,23 +52,35 @@ export function withLoginHint(module, account) {
 export function useHelpdeskAccess(instance, account, authorization, settings = {}) {
   const entry = helpdeskModule(settings)?.href
   const identity = account?.homeAccountId || account?.localAccountId || account?.username
-  const key = identity && entry ? 'hub-helpdesk:' + identity + ':' + entry : null
+  // v2: descarta los «sin acceso» guardados por error durante reinicios de la Mesa.
+  const key = identity && entry ? 'hub-helpdesk-v2:' + identity + ':' + entry : null
   const [visible, setVisible] = useState(() => readVisibility(key))
   const [checking, setChecking] = useState(false)
   const allowed = authorization?.allowed === true && !authorization?.degraded
   useEffect(() => {
     const controller = new AbortController()
     setVisible(readVisibility(key))
+    let retry
+    const check = (again) =>
+      fetchHelpdeskAccess(instance, account, settings, { signal: controller.signal }).then(result => {
+        if (controller.signal.aborted) return
+        if (result === null) {
+          // La Mesa no respondió (p. ej. se está reiniciando): un reintento y, si sigue igual, se muestra la tarjeta;
+          // la propia Mesa vuelve a comprobar el acceso al entrar.
+          if (again) { retry = setTimeout(() => check(false), 4000); return }
+          setVisible(v => v ?? true)
+          setChecking(false)
+          return
+        }
+        setVisible(!!result)
+        setChecking(false)
+        writeVisibility(key, !!result)
+      })
     if (allowed && account && entry) {
       setChecking(true)
-      fetchHelpdeskAccess(instance, account, settings, { signal: controller.signal }).then(module => {
-        if (controller.signal.aborted) return
-        setVisible(!!module)
-        setChecking(false)
-        writeVisibility(key, !!module)
-      })
+      check(true)
     }
-    return () => controller.abort()
+    return () => { controller.abort(); clearTimeout(retry) }
   }, [instance, key, allowed])
   const module = allowed && visible ? withLoginHint(helpdeskModule(settings), account) : null
   // Sin resultado previo se espera la respuesta para mostrar todas las tarjetas a la vez.
