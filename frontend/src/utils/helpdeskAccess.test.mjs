@@ -23,10 +23,10 @@ test('Mesa falla cerrada ante errores, denegación, destino ajeno o módulo desh
 test('Mesa admite idToken de cuenta si MSAL silencioso falla', async () => {
   assert.equal((await fetchHelpdeskAccess({ acquireTokenSilent: async () => { throw Error('interaction') } }, account, {}, { fetcher: async (_, options) => { assert.equal(options.headers.Authorization, 'Bearer cached-id-token'); return good } })).id, 'helpdesk')
 })
-test('Mesa limita a cinco segundos incluso si MSAL no responde', async () => {
+test('Mesa respeta el límite de espera incluso si MSAL no responde', async () => {
   const start = Date.now()
-  assert.equal(await fetchHelpdeskAccess({ acquireTokenSilent: () => new Promise(() => {}) }, account), null)
-  assert.ok(Date.now() - start < 6000)
+  assert.equal(await fetchHelpdeskAccess({ acquireTokenSilent: () => new Promise(() => {}) }, account, {}, { timeoutMs: 300 }), null)
+  assert.ok(Date.now() - start < 1300)
 })
 
 test('login_hint: añade la cuenta del Hub al enlace solo si es un correo válido', async () => {
