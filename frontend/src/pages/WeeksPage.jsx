@@ -2,6 +2,8 @@
 import { useState, useEffect } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../utils/api'
+import { useAuthz } from '../utils/authz'
+import { ProjectTotals, RenameProject, DeleteProjectDialog } from '../components/ProjectTools'
 
 const TYPE_BADGE = {
   DRN: 'badge-orange', FOT: 'badge-blue', VID: 'badge-red',
@@ -15,14 +17,18 @@ export default function WeeksPage() {
   const [project, setProject] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
+  const { me } = useAuthz()
+  const [deleteTarget, setDeleteTarget] = useState(null)
+
+  async function reload() {
+    const [tree, projects] = await Promise.all([api.getBrowse(id, ''), api.getProjects()])
+    setBrowse(tree || { folders: [], files: [] })
+    setProject(projects.find(p => p.code === id))
+  }
 
   useEffect(() => {
     setLoading(true); setError(null)
-    Promise.all([api.getBrowse(id, ''), api.getProjects()])
-      .then(([tree, projects]) => {
-        setBrowse(tree || { folders: [], files: [] })
-        setProject(projects.find(p => p.code === id))
-      })
+    reload()
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [id])
@@ -43,7 +49,9 @@ export default function WeeksPage() {
           <span style={{ fontFamily: 'var(--font-display)', fontSize: '1.1rem', color: 'var(--text)' }}>
             {project?.name}
           </span>
+          <RenameProject project={project} onSaved={reload} />
         </div>
+        <ProjectTotals project={project} />
         <p className="page-sub">
           {browse.folders.length} carpetas · {browse.files.length} archivos directos
           {project?.status && ` · ${project.status}`}
@@ -71,11 +79,17 @@ export default function WeeksPage() {
                 ))}
               </div>
               <div className="week-count">{folder.count} archivos</div>
+              {me?.caps?.deleteMedia && /(?:^|\/)\d{4}_S\d{2}$/.test(folder.path) && (
+                <button className="btn btn-danger btn-sm" onClick={e => {
+                  e.stopPropagation(); setDeleteTarget({ week: folder.path, count: folder.count })
+                }}>Eliminar semana</button>
+              )}
               <div className="week-arrow">›</div>
             </div>
           ))}
         </div>
       )}
+      {deleteTarget && <DeleteProjectDialog projectId={id} target={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={reload} />}
     </>
   )
 }
