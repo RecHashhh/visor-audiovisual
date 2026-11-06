@@ -106,6 +106,9 @@ async function apiFetchBlob(path, options = {}) {
 }
 
 export const api = {
+  getHardware: () => apiFetch('/api/hardware'),
+  refreshHardware: () => apiFetch('/api/hardware/refresh', { method: 'POST' }),
+  uploadHardwarePayroll: file => apiFetch('/api/hardware/nomina', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file }),
   // Etiquetas de clasificación de Obra (sin caché de cliente).
   getTags: () => apiFetch('/api/tags'),
   lookupTags: paths => apiFetch('/api/tags/lookup', { method: 'POST', body: JSON.stringify({ paths }) }),

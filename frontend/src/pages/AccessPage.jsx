@@ -12,12 +12,13 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Presets de capacidades por rol (espejo del backend). Los roles son atajos:
 // después se puede activar/desactivar cada capacidad manualmente.
 const ROLE_CAPS = {
-  admin:    { upload: true,  manageMedia: true,  deleteMedia: true,  share: true,  refreshIndex: true,  manageAccess: true, renameProject: true, tagMedia: true, review: true },
-  operador: { upload: true,  manageMedia: true,  deleteMedia: false, share: true,  refreshIndex: true,  manageAccess: false, renameProject: false, tagMedia: false, review: false },
-  viewer:   { upload: false, manageMedia: false, deleteMedia: false, share: false, refreshIndex: false, manageAccess: false, renameProject: false, tagMedia: false, review: false },
+  admin:    { upload: true,  manageMedia: true,  deleteMedia: true,  share: true,  refreshIndex: true,  manageAccess: true, renameProject: true, tagMedia: true, review: true, hardware: true },
+  operador: { upload: true,  manageMedia: true,  deleteMedia: false, share: true,  refreshIndex: true,  manageAccess: false, renameProject: false, tagMedia: false, review: false, hardware: false },
+  viewer:   { upload: false, manageMedia: false, deleteMedia: false, share: false, refreshIndex: false, manageAccess: false, renameProject: false, tagMedia: false, review: false, hardware: false },
 }
 const ROLE_LABEL = { admin: 'Administrador', operador: 'Operador', viewer: 'Visualizador' }
 const CAP_META = [
+  { key: 'hardware', label: 'Hardware', help: 'Ver indicadores del parque de equipos y actualizar la foto y la nómina. Incluido en Equipo TI; inventario gestionado en RIP_TIC.' },
   { key: 'upload',       label: 'Subir', help: 'Subir material a proyectos' },
   { key: 'manageMedia',  label: 'Organizar', help: 'Crear y subir en las demás secciones' },
   { key: 'deleteMedia',  label: 'Eliminar', help: 'Eliminar archivos, carpetas y semanas de Obra' },

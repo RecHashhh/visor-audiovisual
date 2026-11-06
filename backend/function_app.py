@@ -1160,14 +1160,14 @@ def load_access_config() -> Optional[dict]:
 # Permisos por persona = capacidades de gestión (qué puede HACER) + secciones/scopes
 # (qué puede VER). Los roles son solo presets rápidos de esas capacidades; el
 # administrador puede ajustar cada capacidad manualmente por usuario.
-CAPS = ("upload", "manageMedia", "deleteMedia", "share", "refreshIndex", "manageAccess", "renameProject", "tagMedia", "review")
+CAPS = ("upload", "manageMedia", "deleteMedia", "share", "refreshIndex", "manageAccess", "renameProject", "tagMedia", "review", "hardware")
 ROLE_CAPS = {
     "admin":    {c: True for c in CAPS},
     # El operador sube y organiza, pero borrar es cosa de administración: un
     # borrado en el blob no tiene deshacer desde la app.
     "operador": {"upload": True, "manageMedia": True, "deleteMedia": False, "share": True,
                  "refreshIndex": True, "manageAccess": False,
-                 "renameProject": False, "tagMedia": False, "review": False},
+                 "renameProject": False, "tagMedia": False, "review": False, "hardware": False},
     "viewer":   {c: False for c in CAPS},
 }
 
@@ -1253,7 +1253,7 @@ def effective_perms(caller: Optional[Dict[str, str]]) -> dict:
         ti_members = DEFAULT_TI_MEMBERS
     if caller and caller["email"].strip().lower() in ti_members:
         caps = {**ROLE_CAPS["operador"], "deleteMedia": True, "renameProject": True,
-                "tagMedia": True, "review": True}
+                "tagMedia": True, "review": True, "hardware": True}
         perms = {**perms, "allowed": True, "sections": "*", "scopes": {}, "isManager": True,
                  "caps": {c: bool(caps.get(c) or perms.get("caps", {}).get(c)) for c in CAPS},
                  "groups": ["equipo-ti"]}
@@ -1345,6 +1345,8 @@ def require_perms(req: func.HttpRequest, section: Optional[str] = None,
 def require_blob_access(req: func.HttpRequest, blob_path: str):
     """Gate por ruta de blob: los paths de _media se controlan por sección + carpeta;
     el resto son proyectos (proyectos + código de proyecto)."""
+    if (blob_path or "").strip('/').startswith(CONFIG_PREFIX.strip('/') + '/hardware/'):
+        return require_perms(req, cap="hardware")
     seg = [s for s in (blob_path or "").split("/") if s]
     if seg and seg[0] == MEDIA_PREFIX.strip("/"):
         if len(seg) < 3:
@@ -2141,6 +2143,11 @@ def share_create(req: func.HttpRequest) -> func.HttpResponse:
         if not project_id:
             return err("projectId es requerido")
 
+        private = f"{CONFIG_PREFIX.strip('/')}/hardware/"
+        prefix = f"{project_id}/{week}/" if week else f"{project_id}/"
+        if prefix.startswith(private) or private.startswith(prefix):
+            return err("Hardware solo está disponible con su permiso; no admite enlaces externos", 403)
+
         token      = uuid.uuid4().hex
         expires_at = datetime.now(timezone.utc) + timedelta(days=expiry_days)
         origin     = req.headers.get("Origin", "")
@@ -2241,6 +2248,8 @@ def share_resolve(req: func.HttpRequest) -> func.HttpResponse:
             for p in (share.get("files") or []):
                 if not isinstance(p, str):
                     continue
+                if p.startswith(f"{CONFIG_PREFIX.strip('/')}/hardware/"):
+                    continue
                 fname = p.split("/")[-1]
                 if not fname or is_marker_file(fname):
                     continue
@@ -2263,6 +2272,8 @@ def share_resolve(req: func.HttpRequest) -> func.HttpResponse:
         files      = []
 
         for blob in cc.list_blobs(name_starts_with=prefix):
+            if blob.name.startswith(f"{CONFIG_PREFIX.strip('/')}/hardware/"):
+                continue
             fname = blob.name.split("/")[-1]
             if not fname or is_marker_file(fname):
                 continue
@@ -4504,3 +4515,124 @@ def upload_remote_media_batch(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:
         logging.error("upload_remote_media_batch: %s", exc)
         return err(str(exc), 500)
+
+
+# Hardware: fotos de solo lectura; los cambios de inventario se hacen en RIP_TIC.
+_hardware_lock = Lock()
+_hardware_cached = None
+_hardware_cached_at = 0
+HARDWARE_REFRESH_CRON = os.environ.get("HARDWARE_REFRESH_CRON", "0 0 6 * * *")
+
+
+def _hardware_blob(name):
+    return get_blob_service().get_blob_client(container=CONTAINER, blob=f"{CONFIG_PREFIX.strip('/')}/hardware/{name}", retry_total=0, connection_timeout=5, read_timeout=10)
+
+
+def _hardware_read_payroll():
+    try:
+        stream = _hardware_blob("nomina.xlsx").download_blob(timeout=10)
+        return stream.readall(), stream.properties.last_modified.isoformat()
+    except ResourceNotFoundError:
+        return None
+
+
+def _hardware_refresh():
+    global _hardware_cached, _hardware_cached_at
+    from hardware_service import refresh
+    if not _hardware_lock.acquire(blocking=False):
+        raise RuntimeError("Ya hay una actualización de Hardware en curso")
+    try:
+        areas = [a.strip() for a in os.environ.get("HARDWARE_TARGET_AREAS", "").split(",") if a.strip()]
+        snapshot = refresh(_hardware_read_payroll, os.environ.get("MESA_URL", ""), os.environ.get("HARDWARE_SNAPSHOT_TOKEN", ""), uploader._get_graph_token, areas or None)
+        # Si la Mesa no respondió, no se pisa una foto buena con una vacía.
+        if (snapshot.get("sources", {}).get("mesa") or {}).get("error") and not snapshot.get("items"):
+            previous = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/hardware/snapshot.json")
+            if previous and previous.get("items"):
+                raise RuntimeError("La Mesa no respondió; se mantiene la foto anterior")
+        _hardware_blob("snapshot.json").upload_blob(json.dumps(snapshot, ensure_ascii=False, default=str), overwrite=True, content_type="application/json", timeout=10)
+        history = {"generatedAt": snapshot["generatedAt"], "kpis": snapshot["kpis"]}
+        _hardware_blob(f"history/{datetime.now(timezone.utc):%Y-%m-%d}.json").upload_blob(json.dumps(history, ensure_ascii=False), overwrite=True, content_type="application/json", timeout=10)
+        _hardware_cached, _hardware_cached_at = snapshot, time.monotonic()
+        return snapshot
+    finally:
+        _hardware_lock.release()
+
+
+@app.route(route="hardware", methods=["GET", "OPTIONS"])
+def hardware_get(req: func.HttpRequest) -> func.HttpResponse:
+    global _hardware_cached, _hardware_cached_at
+    if req.method == "OPTIONS":
+        return ok({})
+    _, error = require_perms(req, cap="hardware")
+    if error is not None:
+        return error
+    if _hardware_cached is None or time.monotonic() - _hardware_cached_at >= 300:
+        _hardware_cached = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/hardware/snapshot.json")
+        _hardware_cached_at = time.monotonic()
+    # Static Web Apps no ejecuta temporizadores: la foto vieja (> 20 h) se renueva al abrir la sección.
+    try:
+        generated = datetime.fromisoformat(str((_hardware_cached or {}).get("generatedAt")))
+        stale = datetime.now(timezone.utc) - generated > timedelta(hours=20)
+    except ValueError:
+        stale = _hardware_cached is not None
+    if stale:
+        try:
+            _hardware_refresh()
+        except RuntimeError:
+            pass  # otra actualización en curso: se sirve la foto anterior
+        except Exception:
+            logging.exception("hardware_get: renovación automática")
+    return ok(_hardware_cached) if _hardware_cached is not None else err("Aún no hay foto de Hardware. Pulsa Actualizar ahora.", 404)
+
+
+@app.route(route="hardware/refresh", methods=["POST", "OPTIONS"])
+def hardware_refresh(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return ok({})
+    _, error = require_perms(req, cap="hardware")
+    if error is not None:
+        return error
+    try:
+        return ok(_hardware_refresh())
+    except RuntimeError as exc:
+        return err(str(exc), 409)
+    except Exception:
+        logging.exception("hardware_refresh")
+        return err("No se pudo guardar la foto de Hardware", 500)
+
+
+@app.route(route="hardware/nomina", methods=["POST", "OPTIONS"])
+def hardware_nomina(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return ok({})
+    _, error = require_perms(req, cap="hardware")
+    if error is not None:
+        return error
+    from hardware_snapshot import parse_payroll
+    try:
+        raw = req.get_body()
+        if len(raw) > 14 * 1024 * 1024:
+            return err("Máximo 10 MB", 413)
+        if 'application/json' in req.headers.get('Content-Type', '').lower():
+            raw = base64.b64decode(req.get_json().get('base64', ''), validate=True)
+        if len(raw) > 10 * 1024 * 1024:
+            return err("Máximo 10 MB", 413)
+        parse_payroll(raw)
+    except Exception:
+        return err("Excel inválido: revisa la hoja Ecuador y los encabezados de nómina", 400)
+    try:
+        _hardware_blob("nomina.xlsx").upload_blob(raw, overwrite=True, content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        return ok(_hardware_refresh())
+    except RuntimeError as exc:
+        return err("Nómina guardada. " + str(exc), 409)
+    except Exception:
+        logging.exception("hardware_nomina")
+        return err("No se pudo guardar o recalcular la nómina", 500)
+
+
+@app.timer_trigger(schedule=HARDWARE_REFRESH_CRON, arg_name="timer", run_on_startup=False, use_monitor=True)
+def hardware_daily(timer: func.TimerRequest):
+    try:
+        _hardware_refresh()
+    except Exception:
+        logging.exception("hardware_daily")

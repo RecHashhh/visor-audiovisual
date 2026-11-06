@@ -32,6 +32,8 @@ const SectionsPage     = lazy(() => import('./pages/SectionsPage'))
 const SharesPage       = lazy(() => import('./pages/SharesPage'))
 const ReviewPage       = lazy(() => import('./pages/ReviewPage'))
 
+const HardwarePage = lazy(() => import('./pages/HardwarePage'))
+
 function PageLoader() {
   return (
     <div className="loading" role="status" style={{ minHeight: '40vh' }}>
@@ -168,6 +170,7 @@ function AppRoutes() {
           <Route path="/redes-sociales"         element={<Navigate to="/redes" replace />} />
 
           <Route path="/upload"    element={<RequireCap cap="upload"><UploadPage /></RequireCap>} />
+          <Route path="/hardware" element={<RequireCap cap="hardware"><HardwarePage /></RequireCap>} />
           <Route path="/revision"  element={<RequireCap cap="review"><ReviewPage /></RequireCap>} />
           <Route path="/accesos"   element={<RequireCap cap="manageAccess"><AccessPage /></RequireCap>} />
           <Route path="/secciones" element={<RequireCap cap="manageAccess"><SectionsPage /></RequireCap>} />
