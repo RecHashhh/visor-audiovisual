@@ -1568,8 +1568,8 @@ def tags_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == 'OPTIONS':
         return options_ok()
     action, detail = req.route_params.get('action', ''), req.route_params.get('detail', '')
-    write = req.method == 'POST' and action in ('apply', 'catalog')
-    perms, auth_err = require_perms(req, section='proyectos', cap='tagMedia' if write else None)
+    # Las etiquetas son una herramienta interna del Equipo TI: leer también exige tagMedia.
+    perms, auth_err = require_perms(req, section='proyectos', cap='tagMedia')
     if auth_err:
         return auth_err
     store = tags_store()
@@ -1581,12 +1581,20 @@ def tags_endpoint(req: func.HttpRequest) -> func.HttpResponse:
                 snapshot = (store.catalog(), store.visible(lambda code: True))
                 cache_set('tags-snapshot', snapshot, ttl_seconds=30)
             catalog, assignments = snapshot
-            counts = {}
-            for path, ids in assignments.items():
-                if allowed(path.split('/')[0]):
-                    for id in ids:
-                        counts[id] = counts.get(id, 0) + 1
-            return ok({'catalog': [{**t, 'count': counts.get(t['id'], 0)} for t in catalog]})
+            stats = {}
+            for path in sorted(assignments):
+                if not allowed(path.split('/')[0]):
+                    continue
+                kind = type_of(path.rsplit('/', 1)[-1])
+                for id in assignments[path]:
+                    st = stats.setdefault(id, {'count': 0, 'photoCount': 0, 'videoCount': 0, 'cover': None})
+                    st['count'] += 1
+                    st['photoCount'] += kind == 'img'
+                    st['videoCount'] += kind == 'vid'
+                    if kind == 'img' and not st['cover']:
+                        st['cover'] = path
+            empty = {'count': 0, 'photoCount': 0, 'videoCount': 0, 'cover': None}
+            return ok({'catalog': [{**t, **stats.get(t['id'], empty)} for t in catalog]})
         if req.method == 'GET' and detail == 'files':
             if not any(t['id'] == action for t in store.catalog()):
                 return err('La etiqueta no existe', 404)

@@ -342,7 +342,8 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
   useEffect(() => {
     let alive = true
     setTagAssignments({}); setTagFilter(''); setTagDialog(null); setTagError(''); setTagsReady(false)
-    if (!files.length) return () => { alive = false }
+    // Etiquetas: herramienta del Equipo TI; el resto ni las carga ni las ve.
+    if (!files.length || !me?.caps?.tagMedia) return () => { alive = false }
     const load = async () => {
       const { catalog } = await api.getTags()
       const assignments = {}

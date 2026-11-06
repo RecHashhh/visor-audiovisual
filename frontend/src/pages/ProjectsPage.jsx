@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 import { fetchThumb } from '../utils/thumbs'
 import { ProjectTotals, RenameProject } from '../components/ProjectTools'
+import ObraTabs from '../components/ObraTabs'
 
 const PREFIX_COLORS = {
   DRN: 'badge-orange', FOT: 'badge-blue', VID: 'badge-red',
@@ -100,9 +101,12 @@ export default function ProjectsPage() {
 
   return (
     <>
-      <div className="page-header">
-        <h1 className="page-title">Proyectos</h1>
-        <p className="page-sub">Todo el material audiovisual de cada obra, organizado por proyecto y semana</p>
+      <div className="page-header tagx-head">
+        <div>
+          <h1 className="page-title">Proyectos</h1>
+          <p className="page-sub">Todo el material audiovisual de cada obra, organizado por proyecto y semana</p>
+        </div>
+        <ObraTabs active="projects" />
       </div>
 
       <div className="stats-bar">

@@ -128,8 +128,9 @@ function AppRoutes() {
           <Route path="/favoritos" element={
             <RequireSection section="proyectos"><FavoritesPage /></RequireSection>
           } />
-          <Route path="/etiquetas" element={<RequireSection section="proyectos"><TagsPage /></RequireSection>} />
-          <Route path="/etiquetas/:id" element={<RequireSection section="proyectos"><TagsPage /></RequireSection>} />
+          <Route path="/proyectos/etiquetas" element={<RequireCap cap="tagMedia"><TagsPage /></RequireCap>} />
+          <Route path="/proyectos/etiquetas/:id" element={<RequireCap cap="tagMedia"><TagsPage /></RequireCap>} />
+          <Route path="/etiquetas/*" element={<Navigate to="/proyectos/etiquetas" replace />} />
           <Route path="/favoritos/:cid" element={
             <RequireSection section="proyectos"><FavoritesPage /></RequireSection>
           } />
