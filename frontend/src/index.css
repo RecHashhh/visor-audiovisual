@@ -57,32 +57,33 @@
   font-display: swap;
 }
 
-/* Cargas guardadas: bloque independiente */
-.preset-panel { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 16px; min-width: 0; }
-.preset-toolbar, .preset-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.preset-toolbar { margin-bottom: 8px; }
-.preset-panel button { font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--surface, transparent); color: inherit; cursor: pointer; }
-.preset-panel button:disabled { opacity: .45; cursor: default; }
-.preset-help { border: 1px solid var(--border); border-radius: 50%; width: 18px; height: 18px; text-align: center; font-size: 12px; cursor: help; }
-.preset-list { max-height: 480px; overflow: auto; }
-.preset-row { display: flex; align-items: center; gap: 8px; padding: 9px 0; border-bottom: 1px solid var(--border); }
-.preset-row:last-child { border-bottom: 0; }
-.preset-active { background: var(--surface-hover, rgba(0,120,212,.06)); }
-.preset-info { flex: 1; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
-.preset-info small { display: block; font-size: 11px; color: var(--text-muted, #777); line-height: 1.5; }
-.preset-source { flex: 0 0 28px; cursor: help; }
-.preset-error { color: var(--red, #b42318); font-size: 12px; margin: 8px 0; }
-.preset-form fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding: 12px; margin: 12px 0; border: 1px solid var(--border); border-radius: 6px; }
-.preset-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
-.preset-form input, .preset-form select { width: 100%; min-width: 0; padding: 7px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface, transparent); color: inherit; font: inherit; }
+/* Cargas guardadas: lista en el panel izquierdo, detalle en el derecho */
+.preset-left-actions { display: flex; gap: 6px; padding: 0 12px 8px; }
+.preset-left-actions > button { flex: 1; font-size: 12px; padding: 6px 8px; }
+.preset-item-main { min-width: 0; }
+.preset-item-name { font-size: 0.82rem; font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preset-item-dest { font-size: 0.72rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.preset-source { display: inline-flex; vertical-align: middle; cursor: help; }
+.preset-help { display: inline-grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; width: 18px; height: 18px; font-size: 11px; color: var(--text-dim); cursor: help; }
+.preset-detail-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.preset-detail-title { min-width: 0; }
+.preset-detail-title h3 { font-size: 1rem; font-weight: 700; color: var(--text); margin: 0 0 2px; }
+.preset-detail-meta { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; font-size: 0.8rem; margin: 0 0 12px; }
+.preset-detail-meta dt { color: var(--text-dim); }
+.preset-detail-meta dd { margin: 0; color: var(--text); overflow-wrap: anywhere; }
+.preset-refresh { margin-left: auto; }
+.preset-error { margin-bottom: 10px; }
+.preset-running { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+.preset-form fieldset { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; border: 0; padding: 0; margin: 0; }
+.preset-form label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.preset-form input, .preset-form select { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg2); color: var(--text); font: inherit; font-size: 13px; }
 .preset-form .preset-check { flex-direction: row; align-items: center; }
 .preset-check input { width: auto; }
 .preset-test { grid-column: 1 / -1; overflow-wrap: anywhere; font-size: 12px; }
 .preset-manual { border: 0; padding: 0; margin: 0; min-width: 0; }
 @media (max-width: 680px) {
-  .preset-row { flex-wrap: wrap; }
-  .preset-row > .preset-actions { width: 100%; padding-left: 36px; }
   .preset-form fieldset { grid-template-columns: minmax(0, 1fr); }
+  .preset-refresh { margin-left: 0; }
 }
 
 :root {

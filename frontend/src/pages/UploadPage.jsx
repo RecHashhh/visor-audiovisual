@@ -11,7 +11,7 @@ import { useUploads } from '../utils/uploads'
 import { useAuthz, hasCap, canItem } from '../utils/authz'
 import { useSections } from '../utils/sections'
 import { useUploadLog, logPlan, UploadLog, CopyProgress, runResumableAnalyze, runCopyMigration, analyzeProjectRemote, migrateProjectRemote } from '../utils/remoteUpload'
-import UploadPresets from '../components/UploadPresets'
+import { usePresets, PresetList, PresetDetail, newPreset } from '../components/UploadPresets'
 
 const PREFIJOS = ['FOT', 'DRN', 'VID', 'I360', 'E360']
 const LOCAL_CONCURRENCY = 3
@@ -94,6 +94,8 @@ function ProjectUpload({ onBusyChange }) {
   const [prefijo, setPrefijo] = useState('FOT')
   const [refreshIndex, setRefreshIndex] = useState(true)
   const [recursive, setRecursive] = useState(true)
+  const presets = usePresets({ refreshIndex, onBusyChange: setPresetBusy })
+  const savedMode = projectMode === 'saved'
 
   const [source, setSource] = useState('local') // 'local' | 'sharepoint' | 'onedrive'
   const [result, setResult] = useState(null)
@@ -140,16 +142,31 @@ function ProjectUpload({ onBusyChange }) {
     <div className="up-root">
       <div className="up-left">
         <div className="up-left-header">
-          <h2>Proyecto destino</h2>
-          <p>Elige uno existente o crea uno nuevo</p>
+          <h2>{savedMode ? 'Cargas guardadas' : 'Proyecto destino'}</h2>
+          <p>{savedMode ? 'Orígenes de SharePoint u OneDrive listos para ejecutar' : 'Elige uno existente o crea uno nuevo'}</p>
         </div>
         <div className="up-proj-tabs">
           <button type="button" className={`up-tab ${projectMode === 'existing' ? 'active' : ''}`} onClick={() => setProjectMode('existing')}>Existente</button>
+          <button type="button" className={`up-tab ${savedMode ? 'active' : ''}`} onClick={() => setProjectMode('saved')}>Guardadas</button>
           <button type="button" className={`up-tab ${projectMode === 'new' ? 'active' : ''}`} onClick={() => setProjectMode('new')}>Nuevo</button>
-          <button type="button" className="up-tab up-tab-icon" onClick={loadProjects} disabled={projLoading} title="Actualizar lista">↻</button>
+          <button type="button" className="up-tab up-tab-icon" onClick={savedMode ? presets.load : loadProjects} disabled={savedMode ? presets.loading : projLoading} title="Actualizar lista">↻</button>
         </div>
 
-        {projectMode === 'existing' ? (
+        {savedMode ? (
+          <>
+            <div className="up-search-wrap">
+              <input className="up-search" placeholder="Buscar carga o proyecto…" value={search} onChange={e => setSearch(e.target.value)} />
+            </div>
+            <div className="preset-left-actions">
+              <button type="button" className="up-btn-ghost" disabled={presets.locked || manualBusy} onClick={() => presets.setForm(newPreset())}>+ Nueva carga</button>
+              {presets.batch
+                ? <button type="button" className="up-btn-ghost" onClick={presets.stopAll}>Detener</button>
+                : <button type="button" className="up-btn-ghost" disabled={presets.locked || manualBusy || !presets.presets.length} onClick={presets.all}
+                    title="Ejecuta todas en secuencia; lo ya subido se omite">Ejecutar todas</button>}
+            </div>
+            <PresetList ctx={presets} search={search} />
+          </>
+        ) : projectMode === 'existing' ? (
           <>
             <div className="up-search-wrap">
               <input className="up-search" placeholder="Buscar por código o nombre…" value={search} onChange={e => setSearch(e.target.value)} />
@@ -186,7 +203,11 @@ function ProjectUpload({ onBusyChange }) {
         )}
 
         <div className="up-selected-bar">
-          {ready ? (
+          {savedMode ? (() => {
+            const sel = presets.presets.find(p => p.id === presets.selectedId)
+            return sel ? <><div className="up-selected-label">Carga elegida</div><div className="up-selected-name">{sel.name}</div></>
+              : <div className="up-selected-empty">Ninguna carga elegida</div>
+          })() : ready ? (
             <>
               <div className="up-selected-label">Proyecto activo</div>
               <div className="up-selected-name">{activeCode}</div>
@@ -197,7 +218,10 @@ function ProjectUpload({ onBusyChange }) {
       </div>
 
       <div className="up-right">
-        <UploadPresets projects={projects} disabled={manualBusy} onBusyChange={setPresetBusy} refreshIndex={refreshIndex} />
+        {savedMode ? (
+          <PresetDetail ctx={presets} projects={projects} refreshIndex={refreshIndex} setRefreshIndex={setRefreshIndex} disabled={manualBusy} />
+        ) : <>
+        {presetBusy && <div className="alert alert-ok preset-running">Hay una carga guardada en curso. <button type="button" className="up-btn-ghost" onClick={() => setProjectMode('saved')}>Ver progreso</button></div>}
         <fieldset className="preset-manual" disabled={presetBusy}>
         <div className="up-section">
           <div className="up-section-title">Ajustes</div>
@@ -252,6 +276,7 @@ function ProjectUpload({ onBusyChange }) {
           )}
         </div>
         </fieldset>
+        </>}
       </div>
     </div>
   )
