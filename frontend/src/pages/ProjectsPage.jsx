@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 import { fetchThumb } from '../utils/thumbs'
+import { ProjectTotals, RenameProject } from '../components/ProjectTools'
 
 const PREFIX_COLORS = {
   DRN: 'badge-orange', FOT: 'badge-blue', VID: 'badge-red',
@@ -177,14 +178,14 @@ export default function ProjectsPage() {
         filtered.length === 0
           ? <div className="empty"><div className="empty-text">Sin resultados</div></div>
           : <div className="project-grid">
-              {filtered.map(p => <ProjectCard key={p.code} project={p} onClick={() => nav(`/proyectos/project/${p.code}`)} />)}
+              {filtered.map(p => <ProjectCard key={p.code} project={p} onSaved={() => loadProjects({ silent: true })} onClick={() => nav(`/proyectos/project/${p.code}`)} />)}
             </div>
       )}
     </>
   )
 }
 
-function ProjectCard({ project: p, onClick }) {
+function ProjectCard({ project: p, onClick, onSaved }) {
   const si = statusInfo(p.status)
   const types = (p.types || '').split('+').filter(Boolean)
   const [cover, setCover] = useState(null)
@@ -217,6 +218,8 @@ function ProjectCard({ project: p, onClick }) {
       <div className="project-card-body">
         <div className="project-card-code">{p.code}</div>
         <div className="project-card-name">{p.name}</div>
+        <RenameProject project={p} onSaved={onSaved} />
+        <ProjectTotals project={p} />
         <div className="project-card-meta">
           <span className={`badge ${si.cls}`}>{si.label}</span>
           {types.map(t => (

@@ -113,6 +113,18 @@ export const api = {
   getSections:      ()           => apiFetch('/api/sections'),
   saveSections:     (sections)   => apiFetch('/api/sections', { method: 'POST', body: JSON.stringify({ sections }) }),
   getProjects:      ()           => apiFetch('/api/projects', {}, 'projects'),
+  renameProject:    async (id, name) => {
+    const result = await apiFetch(`/api/projects/${encodeURIComponent(id)}/name`, { method: 'POST', body: JSON.stringify({ name }) })
+    clearCachedByPrefixes(['projects'])
+    return result
+  },
+  deleteProjectMedia: async (id, payload) => {
+    try {
+      return await apiFetch(`/api/projects/${encodeURIComponent(id)}/delete`, { method: 'POST', body: JSON.stringify(payload) })
+    } finally {
+      clearCachedByPrefixes(['projects', 'weeks:', 'files:', 'browse:'])
+    }
+  },
   getWeeks:         (id)         => apiFetch(`/api/projects/${id}/weeks`, {}, `weeks:${id}`),
   getBrowse:        (id, path = '') => {
     const encodedPath = encodeURIComponent(path)

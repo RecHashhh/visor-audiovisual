@@ -7,6 +7,8 @@ import { useFavorites } from '../utils/favorites'
 import { useDownloads } from '../utils/downloads'
 import Modal from '../components/Modal'
 import SmartVideo from '../components/SmartVideo'
+import { useAuthz } from '../utils/authz'
+import { DeleteProjectDialog } from '../components/ProjectTools'
 
 // Corazón (relleno = ya es favorito)
 function HeartIcon({ filled }) {
@@ -96,6 +98,14 @@ async function downloadAsFile(url, filename) {
 
 export default function GalleryPage({ collection = null, onRemove, originLabel }) {
   const { id, week } = useParams()
+  const { me } = useAuthz()
+  const [deleteTarget, setDeleteTarget] = useState(null)
+  async function reloadAfterDelete() {
+    const tree = await api.getBrowse(id, week || '')
+    setBrowse(tree)
+    setViewer(null); setFullscreenViewer(null)
+    exitSel()
+  }
   const nav = useNavigate()
   const [browse, setBrowse] = useState({ folders: [], files: [] })
   const [sasCache, setSasCache] = useState({})
@@ -180,6 +190,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
     setLoadError(null)
     setViewer(null)
     setPreviewOpen(false)
+    setSelected(new Set()); setSelMode(false); setDeleteTarget(null)
 
     if (collection) {
       setBrowse({ folders: [], files: collection.items || [] })
@@ -459,6 +470,11 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                       ))}
                     </div>
                     <div className="week-count">{folder.count} archivos</div>
+                    {me?.caps?.deleteMedia && /(?:^|\/)\d{4}_S\d{2}$/.test(folder.path) && (
+                      <button className="btn btn-danger btn-sm" onClick={e => {
+                        e.stopPropagation(); setDeleteTarget({ week: folder.path, count: folder.count })
+                      }}>Eliminar semana</button>
+                    )}
                     <div className="week-arrow">›</div>
                   </div>
                 ))}
@@ -499,7 +515,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                 <div className="gallery-selbar">
                   {!selMode ? (
                     <button className="btn btn-ghost btn-sm" onClick={() => setSelMode(true)}>
-                      ☑ Seleccionar para descargar
+                      ☑ {me?.caps?.deleteMedia ? 'Seleccionar' : 'Seleccionar para descargar'}
                     </button>
                   ) : (
                     <>
@@ -510,6 +526,8 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                         Descargar ZIP ({selected.size})
                       </button>
                       <button className="btn btn-ghost btn-sm" onClick={exitSel}>Cancelar</button>
+                      {me?.caps?.deleteMedia && <button className="btn btn-danger btn-sm" disabled={!selected.size}
+                        onClick={() => setDeleteTarget({ paths: [...selected], count: selected.size })}>Eliminar ({selected.size})</button>}
                     </>
                   )}
                 </div>
@@ -672,6 +690,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
         </div>
       )}
 
+      {deleteTarget && <DeleteProjectDialog projectId={id} target={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={reloadAfterDelete} />}
       <Modal
         open={!!favTarget}
         onClose={() => !favBusy && setFavTarget(null)}

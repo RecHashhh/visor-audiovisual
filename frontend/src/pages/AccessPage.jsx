@@ -11,21 +11,26 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 // Presets de capacidades por rol (espejo del backend). Los roles son atajos:
 // después se puede activar/desactivar cada capacidad manualmente.
 const ROLE_CAPS = {
-  admin:    { upload: true,  manageMedia: true,  deleteMedia: true,  share: true,  refreshIndex: true,  manageAccess: true },
-  operador: { upload: true,  manageMedia: true,  deleteMedia: false, share: true,  refreshIndex: true,  manageAccess: false },
-  viewer:   { upload: false, manageMedia: false, deleteMedia: false, share: false, refreshIndex: false, manageAccess: false },
+  admin:    { upload: true,  manageMedia: true,  deleteMedia: true,  share: true,  refreshIndex: true,  manageAccess: true, renameProject: true, tagMedia: true, review: true },
+  operador: { upload: true,  manageMedia: true,  deleteMedia: false, share: true,  refreshIndex: true,  manageAccess: false, renameProject: false, tagMedia: false, review: false },
+  viewer:   { upload: false, manageMedia: false, deleteMedia: false, share: false, refreshIndex: false, manageAccess: false, renameProject: false, tagMedia: false, review: false },
 }
 const ROLE_LABEL = { admin: 'Administrador', operador: 'Operador', viewer: 'Visualizador' }
 const CAP_META = [
-  { key: 'upload',       label: 'Subir material a proyectos' },
-  { key: 'manageMedia',  label: 'Crear y subir en Marcas, Documentos y demás secciones' },
-  { key: 'deleteMedia',  label: 'Eliminar archivos y carpetas de esas secciones (no aplica a Proyectos)' },
-  { key: 'share',        label: 'Generar y revocar enlaces externos' },
-  { key: 'refreshIndex', label: 'Refrescar el índice de proyectos' },
-  { key: 'manageAccess', label: 'Gestionar accesos (usuarios, roles y permisos)' },
+  { key: 'upload',       label: 'Subir', help: 'Subir material a proyectos' },
+  { key: 'manageMedia',  label: 'Organizar', help: 'Crear y subir en las demás secciones' },
+  { key: 'deleteMedia',  label: 'Eliminar', help: 'Eliminar archivos, carpetas y semanas de Obra' },
+  { key: 'share',        label: 'Compartir', help: 'Generar y revocar enlaces externos' },
+  { key: 'refreshIndex', label: 'Índice', help: 'Refrescar el índice de proyectos' },
+  { key: 'manageAccess', label: 'Accesos', help: 'Gestionar usuarios, roles y permisos' },
+  { key: 'renameProject', label: 'Renombrar', help: 'Cambiar el nombre visible de un proyecto' },
+  { key: 'tagMedia', label: 'Etiquetar', help: 'Etiquetar material audiovisual' },
+  { key: 'review', label: 'Revisar', help: 'Revisar material audiovisual' },
 ]
 const SECTION_ALIAS = { material: 'proyectos' }
 const canon = (s) => SECTION_ALIAS[s] || s
+const DEFAULT_TI = ['agarzon@ripconciv.com', 'dmesias@ripconciv.com', 'mlovato@ripconciv.com',
+  'kalopez@ripconciv.com', 'bboccanedes@ripconciv.com', 'pasanteti01@ripconciv.com', 'pasanteti02@ripconciv.com']
 
 function capsMatch(caps, role) {
   return CAP_META.every(c => Boolean(caps[c.key]) === ROLE_CAPS[role][c.key])
@@ -50,6 +55,7 @@ function normalizeUser(u) {
 function normalizeConfig(raw) {
   return {
     restricted: Boolean(raw?.restricted),
+    groups: { 'equipo-ti': { label: 'Equipo TI', members: [...new Set((raw?.groups?.['equipo-ti']?.members ?? DEFAULT_TI).map(e => e.trim().toLowerCase()))] } },
     users: Array.isArray(raw?.users) ? raw.users.map(normalizeUser) : [],
   }
 }
@@ -65,6 +71,7 @@ export default function AccessPage() {
   const [saving, setSaving] = useState(false)
   const [saveMsg, setSaveMsg] = useState(null)
   const [newEmail, setNewEmail] = useState('')
+  const [tiEmail, setTiEmail] = useState('')
   const { sections, mediaSections } = useSections()
 
   useEffect(() => {
@@ -128,6 +135,18 @@ export default function AccessPage() {
     setSaveMsg(null)
   }
 
+  function setTiMembers(members) {
+    setCfg(c => ({ ...c, groups: { ...c.groups, 'equipo-ti': { label: 'Equipo TI', members } } }))
+    setSaveMsg(null)
+  }
+
+  function addTiMember() {
+    const email = tiEmail.trim().toLowerCase()
+    if (!EMAIL_RE.test(email)) { setSaveMsg({ ok: false, text: 'Escribe un correo válido.' }); return }
+    setTiMembers([...new Set([...cfg.groups['equipo-ti'].members, email])])
+    setTiEmail('')
+  }
+
   async function save() {
     setSaving(true); setSaveMsg(null)
     try {
@@ -161,6 +180,21 @@ export default function AccessPage() {
           administradora y podrás gestionar el resto.
         </div>
       )}
+
+      {me?.caps?.manageAccess && <section className="access-card">
+        <div className="access-card-title">Equipo TI <span title="Permisos de operador, eliminar, renombrar, etiquetar y revisar. Ve todo, también en modo restringido. Los permisos individuales se suman.">?</span></div>
+        <div className="access-add">
+          <input className="search-input" type="email" placeholder="correo@ripconciv.com" aria-label="Correo para Equipo TI"
+            value={tiEmail} onChange={e => setTiEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTiMember()} />
+          <button className="btn btn-primary" onClick={addTiMember}>Agregar</button>
+        </div>
+        <div className="access-caps">
+          {cfg.groups['equipo-ti'].members.map(email => <span key={email} className="access-cap">
+            {email} <button className="icon-btn icon-btn-danger" title="Quitar del grupo" aria-label={`Quitar a ${email} de Equipo TI`}
+              onClick={() => setTiMembers(cfg.groups['equipo-ti'].members.filter(e => e !== email))}>×</button>
+          </span>)}
+        </div>
+      </section>}
 
       <section className="access-card">
         <div className="access-card-head">
@@ -320,7 +354,7 @@ function UserRow({ user: u, isSelf, sections, sectionItems, onPatch, onSetRole, 
               {CAP_META.map(c => (
                 <label key={c.key} className="access-cap">
                   <input type="checkbox" checked={Boolean(u.caps[c.key])} onChange={() => onToggleCap(c.key)} />
-                  <span>{c.label}</span>
+                  <span>{c.label} <span title={c.help}>?</span></span>
                 </label>
               ))}
             </div>

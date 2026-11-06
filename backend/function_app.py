@@ -11,6 +11,7 @@ import uuid
 import io
 import time
 import tempfile
+import re
 from urllib.parse import unquote
 from threading import Lock
 from datetime import datetime, timezone, timedelta
@@ -24,7 +25,8 @@ from azure.storage.blob import (
     generate_blob_sas,
     BlobSasPermissions,
 )
-from azure.core.exceptions import ResourceNotFoundError, ResourceExistsError
+from azure.core import MatchConditions
+from azure.core.exceptions import ResourceNotFoundError, ResourceExistsError, ResourceModifiedError
 import jwt
 from jwt import PyJWKClient
 import uploader
@@ -427,6 +429,184 @@ def clear_index_related_cache() -> None:
             if key == "projects" or key.startswith("weeks:") or key.startswith("files:"):
                 _cache.pop(key, None)
 
+def update_json_blob(blob_name: str, transform) -> Any:
+    """Actualización optimista: no pierde auditorías/nombres entre instancias."""
+    bc = get_blob_service().get_blob_client(container=CONTAINER, blob=blob_name)
+    for _ in range(8):
+        try:
+            download = bc.download_blob()
+            data = json.loads(download.readall().decode("utf-8"))
+            options = {"overwrite": True, "etag": download.properties.etag,
+                       "match_condition": MatchConditions.IfNotModified}
+        except ResourceNotFoundError:
+            data, options = None, {"overwrite": False}
+        result = transform(data)
+        try:
+            bc.upload_blob(json.dumps(result, ensure_ascii=False), content_type="application/json", **options)
+            return result
+        except (ResourceModifiedError, ResourceExistsError):
+            continue
+    raise RuntimeError("La configuración cambió simultáneamente; vuelve a intentar")
+
+
+def load_project_names() -> dict:
+    cached = cache_get("project-names")
+    if cached is not None:
+        return cached
+    names = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/project-names.json") or {}
+    cache_set("project-names", names, ttl_seconds=30)
+    return names
+
+
+def apply_project_names(items: list, names: dict) -> list:
+    return [{**p, "name": names.get(p.get("code"), {}).get("name") or p.get("name", "")} for p in items]
+
+
+def apply_project_reference_name(item: dict, names: dict) -> dict:
+    """Favoritos y trabajos pueden guardar el código corto, o la ruta completa."""
+    code = str(item.get("projectCode") or "")
+    root = str(item.get("path") or "").split("/", 1)[0]
+    key = root if root in names else code
+    if key not in names:
+        matches = [k for k in names if k.startswith(f"{code}_")] if code else []
+        key = matches[0] if len(matches) == 1 else key
+    if key in names:
+        automatic = " ".join(key.split("_")[1:]).upper().replace("-", " ")
+        return {**item, "projectName": names[key].get("name") or automatic}
+    return item
+
+
+def validate_project_id(project_id: str) -> None:
+    if (not project_id or any(c in project_id for c in "/\\%") or project_id in (".", "..")
+            or should_skip_for_content_index(f"{project_id}/")):
+        raise ValueError("Código de proyecto inválido")
+
+
+def validate_project_delete(project_id: str, body: Any):
+    validate_project_id(project_id)
+    if not isinstance(body, dict):
+        raise ValueError("Payload JSON inválido")
+    week = body.get("week")
+    paths = body.get("paths")
+    if week is not None:
+        if (not isinstance(week, str) or not re.fullmatch(r"(?:[^/\\%]+/)*\d{4}_S(?:0[1-9]|[1-4]\d|5[0-3])", week)
+                or any(s in (".", "..") for s in week.split("/"))):
+            raise ValueError("Semana inválida")
+    if paths is not None and (not isinstance(paths, list) or not paths):
+        raise ValueError("paths debe ser una lista no vacía")
+    if week is None and paths is None:
+        raise ValueError("Indica una semana o archivos")
+    prefix = f"{project_id}/{week}/" if week else f"{project_id}/"
+    for path in paths or []:
+        if (not isinstance(path, str) or not path.startswith(prefix) or "\\" in path or "%" in path
+                or any(s in ("", ".", "..") for s in path.split("/"))):
+            raise ValueError("Ruta fuera del proyecto o semana")
+    return week, list(dict.fromkeys(paths or [])), prefix
+
+
+def refresh_project_indexes(project_id: str, affected: list) -> None:
+    old_weeks = load_json_blob(index_weeks_blob_name(project_id)) or []
+    payload = build_index_payloads(project_id)
+    weeks = payload["weeksByProject"].get(project_id, [])
+    save_json_blob(index_weeks_blob_name(project_id), weeks)
+    folders = {w["week"] for w in old_weeks} | {folder_path_of(p) for p in affected}
+    folders |= {w["week"] for w in weeks}
+    for folder in folders - {None}:
+        save_json_blob(index_files_blob_name(project_id, folder),
+                       payload["filesByProjectWeek"].get(f"{project_id}::{folder}", []))
+    current = load_json_blob(index_projects_blob_name())
+    if isinstance(current, list):
+        update_json_blob(index_projects_blob_name(), lambda data: sorted(
+            [p for p in (data or []) if p.get("code") != project_id] + payload["projects"],
+            key=lambda p: p["code"]))
+    else:
+        refresh_content_indexes()
+    clear_index_related_cache()
+
+
+@app.route(route="projects/{project_id}/name", methods=["POST", "OPTIONS"])
+def project_name(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    project_id = req.route_params.get("project_id", "")
+    perms, auth_err = require_perms(req, section="proyectos", item=project_id, cap="renameProject")
+    if auth_err:
+        return auth_err
+    try:
+        validate_project_id(project_id)
+        body = req.get_json()
+        if not isinstance(body, dict) or not isinstance(body.get("name"), str):
+            raise ValueError("Nombre inválido")
+        name = body["name"].strip()
+        if name and not 3 <= len(name) <= 120:
+            raise ValueError("El nombre debe tener entre 3 y 120 caracteres")
+    except ValueError as exc:
+        return err(str(exc), 400)
+    try:
+        entry = {"name": name, "by": perms["email"], "at": datetime.now(timezone.utc).isoformat()}
+        update_json_blob(f"{CONFIG_PREFIX.strip('/')}/project-names.json",
+                         lambda data: {**(data or {}), project_id: entry})
+        with _cache_lock:
+            _cache.pop("project-names", None)
+        clear_index_related_cache()
+        return ok({"saved": True, "name": name})
+    except Exception as exc:
+        logging.exception("project_name")
+        return err(str(exc), 500)
+
+
+@app.route(route="projects/{project_id}/delete", methods=["POST", "OPTIONS"])
+def project_delete(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    project_id = req.route_params.get("project_id", "")
+    perms, auth_err = require_perms(req, section="proyectos", item=project_id, cap="deleteMedia")
+    if auth_err:
+        return auth_err
+    try:
+        week, paths, prefix = validate_project_delete(project_id, req.get_json())
+    except ValueError as exc:
+        return err(str(exc), 400)
+    deleted = []
+    try:
+        cc = get_blob_service().get_container_client(CONTAINER)
+        if week:
+            blobs = list(cc.list_blobs(name_starts_with=prefix, include=["metadata"]))
+            paths = [b.name for b in blobs]
+            # HNS: incluye el marcador de la propia semana, después de sus hijos.
+            if blob_exists(prefix[:-1]):
+                paths.append(prefix[:-1])
+        paths = sorted(set(paths), key=lambda p: (p.count("/"), p), reverse=True)
+        # Hasta tres blobs por original: nunca supera 2000, incluidas las copias.
+        batch, pending = paths[:666], paths[666:]
+        try:
+            for path in batch:
+                for target in (path, thumb_sidecar_name(path), proxy_sidecar_name(path)):
+                    try:
+                        cc.delete_blob(target)
+                        if target == path:
+                            deleted.append(path)
+                    except ResourceNotFoundError:
+                        pass
+        finally:
+            if deleted:
+                now = datetime.now(timezone.utc)
+                entry = {"at": now.isoformat(), "by": perms["email"], "project": project_id,
+                         "count": len(deleted), "paths": deleted[:50], "week": week}
+                try:
+                    update_json_blob(f"{CONFIG_PREFIX.strip('/')}/audit/borrados-{now:%Y-%m}.json",
+                                     lambda data: [*(data or []), entry])
+                finally:
+                    try:
+                        refresh_project_indexes(project_id, deleted)
+                    finally:
+                        clear_index_related_cache()
+        return ok({"deleted": len(deleted), "remaining": len(pending), "remainingPaths": pending if not week else []})
+    except Exception as exc:
+        logging.exception("project_delete")
+        return err(str(exc), 500)
+
+
 def normalize_projects_payload(items: Any) -> list:
     if not isinstance(items, list):
         return []
@@ -444,7 +624,7 @@ def normalize_projects_payload(items: Any) -> list:
         normalized.append(out)
     return normalized
 
-def build_index_payloads() -> Dict[str, Any]:
+def build_index_payloads(project_id: Optional[str] = None) -> Dict[str, Any]:
     svc = get_blob_service()
     cc  = svc.get_container_client(CONTAINER)
 
@@ -452,7 +632,7 @@ def build_index_payloads() -> Dict[str, Any]:
     week_map_by_project: Dict[str, Dict[str, Dict[str, Any]]] = {}
     files_map_by_project_week: Dict[str, list] = {}
 
-    for blob in cc.list_blobs():
+    for blob in cc.list_blobs(**({"name_starts_with": f"{project_id}/"} if project_id else {})):
         if should_skip_for_content_index(blob.name):
             continue
         parts = blob.name.split("/")
@@ -471,7 +651,7 @@ def build_index_payloads() -> Dict[str, Any]:
             project_map[project_id] = {
                 "code": project_id, "name": slug,
                 "weeks": set(), "types": set(),
-                "lastModified": None, "fileCount": 0, "hasMarker": False,
+                "lastModified": None, "fileCount": 0, "photoCount": 0, "videoCount": 0, "hasMarker": False,
                 "coverPath": None, "coverIsDrone": False,
             }
 
@@ -482,6 +662,8 @@ def build_index_payloads() -> Dict[str, Any]:
 
         proj["weeks"].add(folder_path)
         proj["fileCount"] += 1
+        proj["photoCount"] += type_of(fname) == "img"
+        proj["videoCount"] += type_of(fname) == "vid"
         pfx = prefix_of(fname)
         if pfx != "FILE":
             proj["types"].add(pfx)
@@ -522,6 +704,7 @@ def build_index_payloads() -> Dict[str, Any]:
         projects.append({
             "code": proj["code"], "name": proj["name"],
             "weeks": len(proj["weeks"]),
+            "photoCount": proj["photoCount"], "videoCount": proj["videoCount"],
             "types": "+".join(sorted(proj["types"])),
             "status": status_info["status"],
             "statusReason": status_info["statusReason"],
@@ -919,13 +1102,14 @@ def load_access_config() -> Optional[dict]:
 # Permisos por persona = capacidades de gestión (qué puede HACER) + secciones/scopes
 # (qué puede VER). Los roles son solo presets rápidos de esas capacidades; el
 # administrador puede ajustar cada capacidad manualmente por usuario.
-CAPS = ("upload", "manageMedia", "deleteMedia", "share", "refreshIndex", "manageAccess")
+CAPS = ("upload", "manageMedia", "deleteMedia", "share", "refreshIndex", "manageAccess", "renameProject", "tagMedia", "review")
 ROLE_CAPS = {
     "admin":    {c: True for c in CAPS},
     # El operador sube y organiza, pero borrar es cosa de administración: un
     # borrado en el blob no tiene deshacer desde la app.
     "operador": {"upload": True, "manageMedia": True, "deleteMedia": False, "share": True,
-                 "refreshIndex": True, "manageAccess": False},
+                 "refreshIndex": True, "manageAccess": False,
+                 "renameProject": False, "tagMedia": False, "review": False},
     "viewer":   {c: False for c in CAPS},
 }
 
@@ -933,6 +1117,29 @@ ROLE_CAPS = {
 # (modo abierto) entra como viewer y ve SOLO estas secciones, sin poder subir
 # ni gestionar nada. El admin puede ampliar por persona desde la página Accesos.
 DEFAULT_GUEST_SECTIONS = ["marcas"]
+
+DEFAULT_TI_MEMBERS = ["agarzon@ripconciv.com", "dmesias@ripconciv.com", "mlovato@ripconciv.com",
+                      "kalopez@ripconciv.com", "bboccanedes@ripconciv.com",
+                      "pasanteti01@ripconciv.com", "pasanteti02@ripconciv.com"]
+
+
+def access_groups(cfg: Optional[dict]) -> dict:
+    groups = (cfg or {}).get("groups") or {}
+    if not isinstance(groups, dict):
+        raise ValueError("groups debe ser un objeto")
+    group = groups.get("equipo-ti", {"members": DEFAULT_TI_MEMBERS})
+    if not isinstance(group, dict):
+        raise ValueError("Equipo TI debe ser un objeto")
+    members = group.get("members", [])
+    if not isinstance(members, list):
+        raise ValueError("Los miembros de Equipo TI deben ser una lista")
+    cleaned = set()
+    for raw in members:
+        email = str(raw).strip().lower()
+        if not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+            raise ValueError("Correo inválido en Equipo TI")
+        cleaned.add(email)
+    return {"equipo-ti": {"label": "Equipo TI", "members": sorted(cleaned)}}
 
 def _caps_from(role: str, overrides: Any) -> dict:
     caps = dict(ROLE_CAPS.get(role, ROLE_CAPS["viewer"]))
@@ -977,12 +1184,32 @@ def _normalize_scopes(entry: dict) -> dict:
     return cleaned
 
 def effective_perms(caller: Optional[Dict[str, str]]) -> dict:
+    cfg = load_access_config() if caller else None
+    perms = _individual_perms(caller, cfg)
+    perms["groups"] = []
+    try:
+        ti_members = access_groups(cfg)["equipo-ti"]["members"]
+    except ValueError as exc:
+        # Un grupo mal guardado no debe tumbar la autenticación de todo el hub.
+        logging.error("Equipo TI inválido en access.json: %s", exc)
+        ti_members = DEFAULT_TI_MEMBERS
+    if caller and caller["email"].strip().lower() in ti_members:
+        caps = {**ROLE_CAPS["operador"], "deleteMedia": True, "renameProject": True,
+                "tagMedia": True, "review": True}
+        perms = {**perms, "allowed": True, "sections": "*", "scopes": {}, "isManager": True,
+                 "caps": {c: bool(caps.get(c) or perms.get("caps", {}).get(c)) for c in CAPS},
+                 "groups": ["equipo-ti"]}
+        perms["isAdmin"] = perms["caps"]["manageAccess"]
+        perms["role"] = perms["role"] or "operador"
+    return perms
+
+
+def _individual_perms(caller: Optional[Dict[str, str]], cfg: Optional[dict]) -> dict:
     if caller is None:
         return {"email": "", "name": "", "allowed": False, "role": None, "isAdmin": False,
                 "isManager": False, "sections": [], "scopes": {}, "restricted": False, "bootstrap": False}
 
     email, name = caller["email"], caller.get("name", "")
-    cfg = load_access_config()
     env_admin = email in ADMIN_EMAILS
 
     if cfg is None:
@@ -1068,6 +1295,7 @@ def require_blob_access(req: func.HttpRequest, blob_path: str):
     return require_perms(req, section="proyectos", item=seg[0] if seg else "")
 
 def _filter_projects_by_perms(items: list, perms: dict) -> list:
+    items = apply_project_names(items, load_project_names())
     if not perms_allow_section(perms, "proyectos"):
         return []
     scope = (perms.get("scopes") or {}).get("proyectos")
@@ -1141,6 +1369,7 @@ def sanitize_access_config(payload: Any, saver_email: str) -> dict:
 
     return {
         "version": 2,
+        "groups": access_groups(payload),
         "restricted": bool(payload.get("restricted")),
         "users": users,
         "updatedAt": datetime.now(timezone.utc).isoformat(),
@@ -1303,7 +1532,7 @@ def get_projects(req: func.HttpRequest) -> func.HttpResponse:
                 project_map[proj_folder] = {
                     "code": proj_folder, "name": slug,
                     "weeks": set(), "types": set(),
-                    "lastModified": None, "fileCount": 0, "hasMarker": False,
+                    "lastModified": None, "fileCount": 0, "photoCount": 0, "videoCount": 0, "hasMarker": False,
                     "coverPath": None, "coverIsDrone": False,
                 }
 
@@ -1326,6 +1555,8 @@ def get_projects(req: func.HttpRequest) -> func.HttpResponse:
 
             p["weeks"].add(week_folder)
             p["fileCount"] += 1
+            p["photoCount"] += type_of(file_name) == "img"
+            p["videoCount"] += type_of(file_name) == "vid"
             pfx = prefix_of(file_name)
             if pfx != "FILE":
                 p["types"].add(pfx)
@@ -1349,6 +1580,7 @@ def get_projects(req: func.HttpRequest) -> func.HttpResponse:
                 "code":         proj["code"],
                 "name":         proj["name"],
                 "weeks":        len(proj["weeks"]),
+                "photoCount":   proj["photoCount"], "videoCount": proj["videoCount"],
                 "types":        "+".join(sorted(proj["types"])),
                 "status":       status_info["status"],
                 "statusReason": status_info["statusReason"],
@@ -1827,7 +2059,7 @@ def access_config_endpoint(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "GET":
         cfg = load_access_config()
         return ok({
-            "config": cfg if cfg is not None else {"restricted": False, "users": []},
+            "config": {**(cfg or {"restricted": False, "users": []}), "groups": access_groups(cfg)},
             "exists": cfg is not None,
             "bootstrap": perms.get("bootstrap", False),
             "envAdmins": sorted(ADMIN_EMAILS),
@@ -2503,6 +2735,9 @@ def _fav_error(exc):
 def _load_favorites(email: str) -> dict:
     data = load_json_blob(_favorites_blob_name(email))
     cols = data.get("collections") if isinstance(data, dict) else None
+    if cols:
+        names = load_project_names()
+        cols = [{**c, "items": [apply_project_reference_name(it, names) for it in c.get("items", [])]} for c in cols]
     return {"collections": cols if isinstance(cols, list) else []}
 
 def _save_favorites(email: str, data: dict) -> None:
@@ -2894,7 +3129,8 @@ def upload_status(req: func.HttpRequest) -> func.HttpResponse:
         job = _upload_jobs.get(job_id)
         if not job:
             return err("jobId no encontrado", 404)
-        return ok({k: job[k] for k in job})
+        result = {k: job[k] for k in job}
+    return ok(apply_project_reference_name(result, load_project_names()))
 
 
 # ══════════════════════════════════════════════════════════════════════════════
