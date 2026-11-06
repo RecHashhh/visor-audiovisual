@@ -106,6 +106,12 @@ async function apiFetchBlob(path, options = {}) {
 }
 
 export const api = {
+  // Etiquetas de clasificación de Obra (sin caché de cliente).
+  getTags: () => apiFetch('/api/tags'),
+  lookupTags: paths => apiFetch('/api/tags/lookup', { method: 'POST', body: JSON.stringify({ paths }) }),
+  applyTags: (paths, add = [], remove = []) => apiFetch('/api/tags/apply', { method: 'POST', body: JSON.stringify({ paths, add, remove }) }),
+  getTagFiles: id => apiFetch(`/api/tags/${encodeURIComponent(id)}/files`),
+  editTagCatalog: body => apiFetch('/api/tags/catalog', { method: 'POST', body: JSON.stringify(body) }),
   getReview:       () => apiFetch('/api/review'),
   updateReview:    (code, body) => apiFetch(`/api/review/${encodeURIComponent(code)}`, { method: 'POST', body: JSON.stringify(body) }),
   getMe:            ()           => apiFetch('/api/me'),

@@ -20,6 +20,7 @@ const LogoutPage       = lazy(() => import('./pages/LogoutPage'))
 const ProjectsPage     = lazy(() => import('./pages/ProjectsPage'))
 const WeeksPage        = lazy(() => import('./pages/WeeksPage'))
 const GalleryPage      = lazy(() => import('./pages/GalleryPage'))
+const TagsPage         = lazy(() => import('./pages/TagsPage'))
 const MediaSectionPage = lazy(() => import('./pages/MediaSectionPage'))
 const MediaFolderPage  = lazy(() => import('./pages/MediaFolderPage'))
 const LinksPage        = lazy(() => import('./pages/LinksPage'))
@@ -127,6 +128,8 @@ function AppRoutes() {
           <Route path="/favoritos" element={
             <RequireSection section="proyectos"><FavoritesPage /></RequireSection>
           } />
+          <Route path="/etiquetas" element={<RequireSection section="proyectos"><TagsPage /></RequireSection>} />
+          <Route path="/etiquetas/:id" element={<RequireSection section="proyectos"><TagsPage /></RequireSection>} />
           <Route path="/favoritos/:cid" element={
             <RequireSection section="proyectos"><FavoritesPage /></RequireSection>
           } />

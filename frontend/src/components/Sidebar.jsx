@@ -57,6 +57,9 @@ export default function Sidebar({ open, onNavigate }) {
           </NavLink>
         )}
 
+        {canSection(me, 'proyectos') && <NavLink to="/etiquetas" onClick={onNavigate} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+          <span className="sidebar-link-icon" aria-hidden="true">#</span><span className="sidebar-link-label">Etiquetas</span>
+        </NavLink>}
         <div className="sidebar-divider" />
 
         {visibleSections.map(s => (

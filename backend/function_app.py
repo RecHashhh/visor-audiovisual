@@ -31,6 +31,7 @@ import jwt
 from jwt import PyJWKClient
 import uploader
 from favorites_store import Favorites, origin as favorite_origin
+from tags_store import Tags, paths_list as tag_paths_list
 from azure.core import MatchConditions
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
@@ -594,13 +595,16 @@ def project_delete(req: func.HttpRequest) -> func.HttpResponse:
                 entry = {"at": now.isoformat(), "by": perms["email"], "project": project_id,
                          "count": len(deleted), "paths": deleted[:50], "week": week}
                 try:
-                    update_json_blob(f"{CONFIG_PREFIX.strip('/')}/audit/borrados-{now:%Y-%m}.json",
-                                     lambda data: [*(data or []), entry])
+                    tags_cleanup_deleted(deleted)
                 finally:
                     try:
-                        refresh_project_indexes(project_id, deleted)
+                        update_json_blob(f"{CONFIG_PREFIX.strip('/')}/audit/borrados-{now:%Y-%m}.json",
+                                         lambda data: [*(data or []), entry])
                     finally:
-                        clear_index_related_cache()
+                        try:
+                            refresh_project_indexes(project_id, deleted)
+                        finally:
+                            clear_index_related_cache()
         return ok({"deleted": len(deleted), "remaining": len(pending), "remainingPaths": pending if not week else []})
     except Exception as exc:
         logging.exception("project_delete")
@@ -1485,6 +1489,90 @@ def thumb(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse(body=thumb_bytes, status_code=200, headers=binary_headers(content_type))
     except Exception as exc:
         logging.error("thumb: %s", exc)
+        return err(str(exc), 500)
+
+
+# ── Etiquetas de clasificación de Obra ─────────────────────────────────────
+def tags_store():
+    return Tags(load_json_blob, update_json_blob, CONFIG_PREFIX)
+
+
+def tags_invalidate():
+    with _cache_lock:
+        _cache.pop('tags-snapshot', None)
+
+
+def tags_cleanup_deleted(paths):
+    try:
+        tags_store().cleanup(paths=paths)
+    finally:
+        tags_invalidate()
+
+
+@app.route(route="tags/{action?}/{detail?}", methods=["GET", "POST", "OPTIONS"])
+def tags_endpoint(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == 'OPTIONS':
+        return options_ok()
+    action, detail = req.route_params.get('action', ''), req.route_params.get('detail', '')
+    write = req.method == 'POST' and action in ('apply', 'catalog')
+    perms, auth_err = require_perms(req, section='proyectos', cap='tagMedia' if write else None)
+    if auth_err:
+        return auth_err
+    store = tags_store()
+    allowed = lambda code: perms_allow_item(perms, 'proyectos', code)
+    try:
+        if req.method == 'GET' and not action:
+            snapshot = cache_get('tags-snapshot')
+            if snapshot is None:
+                snapshot = (store.catalog(), store.visible(lambda code: True))
+                cache_set('tags-snapshot', snapshot, ttl_seconds=30)
+            catalog, assignments = snapshot
+            counts = {}
+            for path, ids in assignments.items():
+                if allowed(path.split('/')[0]):
+                    for id in ids:
+                        counts[id] = counts.get(id, 0) + 1
+            return ok({'catalog': [{**t, 'count': counts.get(t['id'], 0)} for t in catalog]})
+        if req.method == 'GET' and detail == 'files':
+            if not any(t['id'] == action for t in store.catalog()):
+                return err('La etiqueta no existe', 404)
+            return ok(store.files(action, allowed))
+        if req.method == 'POST' and action in ('lookup', 'apply') and not detail:
+            body = req.get_json()
+            if not isinstance(body, dict):
+                raise ValueError('Payload JSON inválido')
+            paths = tag_paths_list(body.get('paths'), 2000 if action == 'apply' else 3000)
+            checked_projects = set()
+            for path in paths:
+                validate_project_id(path.split('/')[0])
+                code = path.split('/')[0]
+                if code in checked_projects:
+                    continue
+                _, denied = require_blob_access(req, path)
+                if denied:
+                    return denied
+                checked_projects.add(code)
+            if action == 'apply':
+                try:
+                    data = store.apply(paths, body.get('add', []), body.get('remove', []),
+                                       perms['email'], datetime.now(timezone.utc).isoformat())
+                finally:
+                    tags_invalidate()
+                return ok({p: data.get(p, {}).get('tags', []) for p in paths})
+            data = store.assignments()
+            valid = {t['id'] for t in store.catalog()}
+            return ok({p: [t for t in data.get(p, {}).get('tags', []) if t in valid] for p in paths})
+        if req.method == 'POST' and action == 'catalog' and not detail:
+            try:
+                catalog = store.edit_catalog(req.get_json())
+            finally:
+                tags_invalidate()
+            return ok({'catalog': catalog})
+        return err('Ruta de etiquetas no disponible', 404)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:
+        logging.exception('tags_endpoint')
         return err(str(exc), 500)
 
 

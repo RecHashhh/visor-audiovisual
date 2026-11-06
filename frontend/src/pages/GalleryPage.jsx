@@ -9,6 +9,7 @@ import Modal from '../components/Modal'
 import SmartVideo from '../components/SmartVideo'
 import { useAuthz } from '../utils/authz'
 import { DeleteProjectDialog } from '../components/ProjectTools'
+import { TagChips, TagDialog } from '../components/MediaTags'
 
 // Corazón (relleno = ya es favorito)
 function HeartIcon({ filled }) {
@@ -82,24 +83,18 @@ function readImageDimensions(url) {
   })
 }
 
-async function downloadAsFile(url, filename) {
-  const res = await fetch(url)
-  if (!res.ok) throw new Error('No se pudo descargar el archivo')
-  const blob = await res.blob()
-  const objectUrl = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = objectUrl
-  a.download = filename
-  document.body.appendChild(a)
-  a.click()
-  document.body.removeChild(a)
-  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
-}
 
 export default function GalleryPage({ collection = null, onRemove, originLabel }) {
   const { id, week } = useParams()
   const { me } = useAuthz()
   const [deleteTarget, setDeleteTarget] = useState(null)
+  const [tagCatalog, setTagCatalog] = useState([])
+  const [tagAssignments, setTagAssignments] = useState({})
+  const [tagFilter, setTagFilter] = useState('')
+  const [tagDialog, setTagDialog] = useState(null)
+  const [tagBusy, setTagBusy] = useState(false)
+  const [tagError, setTagError] = useState('')
+  const [tagsReady, setTagsReady] = useState(false)
   async function reloadAfterDelete() {
     const tree = await api.getBrowse(id, week || '')
     setBrowse(tree)
@@ -308,10 +303,10 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
   }
 
   const { downloadSingle, downloadZip, isBusy } = useDownloads()
-  const download = async (file) => {
-    const url = await getSas(file.path, 30)
-    downloadSingle(url, file.name)   // formato original, con indicador de descarga
-  }
+  // Formato original con bandeja de progreso; los videos grandes van directo a disco.
+  const download = (file) => downloadSingle(({ download: attach }) => attach
+    ? api.getSasUrl(file.path, 240, file.name).then(r => r.sasUrl)
+    : getSas(file.path, 240), file.name, file.size)
 
   // Selección múltiple para descargar en ZIP
   const [selMode, setSelMode] = useState(false)
@@ -344,6 +339,32 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
   }
 
   const files = browse.files || []
+  useEffect(() => {
+    let alive = true
+    setTagAssignments({}); setTagFilter(''); setTagDialog(null); setTagError(''); setTagsReady(false)
+    if (!files.length) return () => { alive = false }
+    const load = async () => {
+      const { catalog } = await api.getTags()
+      const assignments = {}
+      for (let i = 0; i < files.length; i += 3000) Object.assign(assignments, await api.lookupTags(files.slice(i, i + 3000).map(f => f.path)))
+      if (alive) { setTagCatalog(catalog); setTagAssignments(assignments); setTagsReady(true) }
+    }
+    load().catch(e => { if (alive) setTagError(e.message) })
+    return () => { alive = false }
+  }, [browse.files])
+  const applyTags = async (paths, add, remove) => {
+    setTagBusy(true); setTagError('')
+    try {
+      for (let i = 0; i < paths.length; i += 2000) {
+        const result = await api.applyTags(paths.slice(i, i + 2000), add, remove)
+        setTagAssignments(prev => ({ ...prev, ...result }))
+      }
+      setTagDialog(null)
+    } catch (e) { setTagError(e.message) } finally { setTagBusy(false) }
+  }
+  const fileTags = file => <TagChips catalog={tagCatalog} ids={tagAssignments[file.path] || []}
+    editable={!!me?.caps?.tagMedia && tagsReady} busy={tagBusy}
+    onToggle={tag => applyTags([file.path], (tagAssignments[file.path] || []).includes(tag) ? [] : [tag], (tagAssignments[file.path] || []).includes(tag) ? [tag] : [])} />
   const folders = browse.folders || []
   const showFoldersOnly = folders.length > 0
   const prefixes = [...new Set(files.map(f => prefixOf(f.name)))].filter(Boolean)
@@ -351,9 +372,13 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
     ? (a.projectCode || '').localeCompare(b.projectCode || '') || a.path.localeCompare(b.path)
     : (b.addedAt || '').localeCompare(a.addedAt || '')) : files
   const formatFilteredFiles = filter === 'all' ? orderedFiles : orderedFiles.filter(f => collection ? kindOf(f.name) === filter : prefixOf(f.name) === filter)
-  const displayFiles = sizeFilter === 'all'
+  const sizeFilteredFiles = sizeFilter === 'all'
     ? formatFilteredFiles
     : formatFilteredFiles.filter(f => sizeBucketOf(f.size) === sizeFilter)
+  const displayFiles = tagFilter ? sizeFilteredFiles.filter(f => (tagAssignments[f.path] || []).includes(tagFilter)) : sizeFilteredFiles
+  useEffect(() => {
+    if (tagFilter && tagsReady && !files.some(f => (tagAssignments[f.path] || []).includes(tagFilter))) setTagFilter('')
+  }, [tagAssignments, tagFilter, tagsReady, browse.files])
 
   const sizeCounts = {
     small: files.filter(f => sizeBucketOf(f.size) === 'small').length,
@@ -485,6 +510,11 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
               <>
                 {/* Filters */}
                 <div className="gallery-toolbar">
+                  {!collection && tagCatalog.map(t => {
+                    const count = files.filter(f => (tagAssignments[f.path] || []).includes(t.id)).length
+                    return count > 0 && <button key={t.id} className={`tag-filter filter-chip ${tagFilter === t.id ? 'active' : ''}`}
+                      aria-pressed={tagFilter === t.id} onClick={() => setTagFilter(tagFilter === t.id ? '' : t.id)}>{t.label} ({count})</button>
+                  })}
                   <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
                     Todos ({files.length})
                   </button>
@@ -522,6 +552,8 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                       <span className="gallery-selbar-count">{selected.size} seleccionada{selected.size !== 1 ? 's' : ''}</span>
                       <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set(displayFiles.map(f => f.path)))}>Todo ({displayFiles.length})</button>
                       <button className="btn btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Ninguno</button>
+                      {!collection && me?.caps?.tagMedia && <button className="btn btn-ghost btn-sm" disabled={!selected.size || tagBusy || !tagsReady}
+                        onClick={() => setTagDialog([...selected])}>Etiquetar ({selected.size})</button>}
                       <button className="btn btn-primary btn-sm" onClick={downloadSelected} disabled={!selected.size || isBusy()}>
                         Descargar ZIP ({selected.size})
                       </button>
@@ -545,6 +577,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                       onClick={() => (selMode ? toggleSel(file.path) : openItem(file, idx))}
                       active={viewer?.file?.path === file.path}
                       label={collection ? originLabel?.(file) : null}
+                      tags={tagCatalog.filter(t => (tagAssignments[f.path] || []).includes(t.id))}
                       fav={isFav(file.path)}
                       onFav={() => collection ? onRemove?.(file.path) : onHeart(file)}
                       selMode={selMode}
@@ -613,6 +646,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
               </div>
 
               <div className="gallery-preview-content">
+                {viewer.file && fileTags(viewer.file)}
                 <div className="gallery-preview-actions">
                   <button className="btn btn-ghost btn-sm" onClick={() => navViewer(-1)}>‹ Anterior</button>
                   <button className="btn btn-ghost btn-sm" onClick={() => navViewer(1)}>Siguiente ›</button>
@@ -665,6 +699,8 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
               <div className="lightbox-bottom-row">
                 <div className="lightbox-toolbar">
                   <span className="lightbox-name">{fullscreenViewer.file?.name || 'Sin nombre'}</span>
+                  {collection && <span>{originLabel?.(fullscreenViewer.file)}</span>}
+                  {fullscreenViewer.file && fileTags(fullscreenViewer.file)}
                   {collection && <Link className="btn btn-ghost btn-sm" to={originUrl(fullscreenViewer.file)}>Ir al origen</Link>}
                   <button className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>Descargar</button>
                 </div>
@@ -691,6 +727,9 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
       )}
 
       {deleteTarget && <DeleteProjectDialog projectId={id} target={deleteTarget} onClose={() => setDeleteTarget(null)} onDeleted={reloadAfterDelete} />}
+      {tagError && <div className="tag-error field-error" role="alert">{tagError}</div>}
+      {tagDialog && <TagDialog paths={tagDialog} catalog={tagCatalog} assignments={tagAssignments} busy={tagBusy} error={tagError}
+        onClose={() => setTagDialog(null)} onApply={(add, remove) => applyTags(tagDialog, add, remove)} />}
       <Modal
         open={!!favTarget}
         onClose={() => !favBusy && setFavTarget(null)}
@@ -728,7 +767,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
   )
 }
 
-function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active, fav, onFav, selMode, checked, label }) {
+function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active, fav, onFav, selMode, checked, label, tags = [] }) {
   const [loading, setLoading] = useState(false)
   const ref = useRef(null)
   const prefix = prefixOf(file.name)
@@ -794,6 +833,9 @@ function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active, f
         </button>
       )}
       <div className={`gallery-item-type badge ${typeColor}`}>{prefix}</div>
+      {tags.length > 0 && <div className="tag-dots" title={tags.map(t => t.label).join(' · ')} aria-label={tags.map(t => t.label).join(', ')}>
+        {tags.map(t => <span key={t.id} className={`tag-dot tag-color-${t.color}`} />)}
+      </div>}
       <div className="gallery-item-label" title={label || file.name}>{label || file.name}</div>
     </div>
   )
