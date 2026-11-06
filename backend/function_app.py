@@ -12,7 +12,7 @@ import io
 import time
 import tempfile
 import re
-from urllib.parse import unquote
+from urllib.parse import unquote, quote
 from threading import Lock
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
@@ -276,10 +276,17 @@ def list_folder_children(project_id: str, folder_path: str) -> Dict[str, list]:
     files.sort(key=lambda f: f["name"])
     return {"folders": folders, "files": files}
 
-def make_sas_url(blob_path: str, expiry_minutes: int = 60) -> str:
+def make_sas_url(blob_path: str, expiry_minutes: int = 60, download_name: Optional[str] = None) -> str:
     if not ACCOUNT_KEY:
         raise ValueError("AZURE_STORAGE_KEY no configurado en Application Settings")
     expiry = datetime.now(timezone.utc) + timedelta(minutes=expiry_minutes)
+    # download_name: el Storage responde con Content-Disposition: attachment y
+    # el navegador guarda directo a disco (archivos de varias GB sin memoria).
+    extra = {}
+    if download_name:
+        safe = "".join(c for c in download_name if c not in '"\\\r\n') or "archivo"
+        ascii_name = safe.encode("ascii", "ignore").decode() or "archivo"
+        extra["content_disposition"] = f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(safe)}"
     sas = generate_blob_sas(
         account_name=ACCOUNT_NAME,
         container_name=CONTAINER,
@@ -287,6 +294,7 @@ def make_sas_url(blob_path: str, expiry_minutes: int = 60) -> str:
         account_key=ACCOUNT_KEY,
         permission=BlobSasPermissions(read=True),
         expiry=expiry,
+        **extra,
     )
     return f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER}/{blob_path}?{sas}"
 
@@ -2049,7 +2057,10 @@ def sas_generate(req: func.HttpRequest) -> func.HttpResponse:
             proxy = proxy_sidecar_name(blob_path)
             if blob_exists(proxy):
                 served_path = proxy
-        sas_url = make_sas_url(served_path, expiry_minutes)
+        download_name = None
+        if body.get("download") and served_path == blob_path:
+            download_name = str(body.get("fileName") or blob_path.rsplit("/", 1)[-1])[:200]
+        sas_url = make_sas_url(served_path, expiry_minutes, download_name)
         return ok({"sasUrl": sas_url, "expiresInMinutes": expiry_minutes,
                    "proxy": served_path != blob_path})
     except Exception as exc:

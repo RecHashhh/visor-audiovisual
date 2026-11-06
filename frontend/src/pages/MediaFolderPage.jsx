@@ -7,6 +7,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../utils/api'
+import { downloadFile as startDownload } from '../utils/downloads'
 import { fetchThumb } from '../utils/thumbs'
 import { useAuthz, hasCap } from '../utils/authz'
 import { useSections } from '../utils/sections'
@@ -93,16 +94,9 @@ function parseVariant(file) {
   }
 }
 
-async function downloadFile(path, fileName) {
-  const res = await api.getSasUrl(path, 15)
-  const blobRes = await fetch(res.sasUrl)
-  if (!blobRes.ok) throw new Error('No se pudo descargar el archivo')
-  const blob = await blobRes.blob()
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url; a.download = fileName
-  document.body.appendChild(a); a.click(); a.remove()
-  setTimeout(() => URL.revokeObjectURL(url), 4000)
+// Con bandeja de progreso; los archivos grandes van directo a disco.
+function downloadFile(path, fileName, size) {
+  return startDownload(({ download }) => api.getSasUrl(path, 240, download ? fileName : null).then(r => r.sasUrl), fileName, size)
 }
 function fmtSize(bytes) {
   return bytes > 1024 * 1024 ? `${(bytes / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(bytes / 1024))} KB`
@@ -628,7 +622,7 @@ function FileViewer({ files, index, onClose, onMove }) {
     <div className="fv-none">
       <span className="file-tile-glyph" style={{ color: k.tint, fontSize: '3rem' }}>{k.glyph || k.badge}</span>
       <p>{label}</p>
-      <button className="btn btn-primary" onClick={() => downloadFile(f.path, name).catch(() => {})}>Descargar archivo</button>
+      <button className="btn btn-primary" onClick={() => downloadFile(f.path, name, f.size).catch(() => {})}>Descargar archivo</button>
     </div>
   )
 
@@ -664,7 +658,7 @@ function FileViewer({ files, index, onClose, onMove }) {
           <span className="media-lightbox-name">{name}</span>
           <span className="media-lightbox-meta">
             {f.lastModified && <span>{fmtDate(f.lastModified)}</span>}
-            <button className="media-lightbox-download" onClick={() => downloadFile(f.path, name).catch(() => {})}>
+            <button className="media-lightbox-download" onClick={() => downloadFile(f.path, name, f.size).catch(() => {})}>
               Descargar
             </button>
           </span>
@@ -726,7 +720,7 @@ function LogoTile({ variant: v, brandName, onOpen, onDelete }) {
           <span className="logo-tile-name">{v.backgroundLabel} · {v.colorLabel}</span>
           <span className="logo-tile-meta">{v.lastModified ? `PNG · ${fmtDate(v.lastModified)}` : 'PNG · alta resolución'}</span>
         </div>
-        <button className="icon-btn" onClick={() => downloadFile(v.path, v.name).catch(() => {})} title="Descargar original" aria-label={`Descargar ${v.formatLabel}`}>
+        <button className="icon-btn" onClick={() => downloadFile(v.path, v.name, v.size).catch(() => {})} title="Descargar original" aria-label={`Descargar ${v.formatLabel}`}>
           <DownloadIcon />
         </button>
         {onDelete && (
@@ -757,7 +751,7 @@ function ImageTile({ file: f, onOpen, onDelete }) {
           <span className="media-img-name" title={f.name}>{f.name.split('/').pop()}</span>
           {f.lastModified && <span className="media-img-date">{fmtDate(f.lastModified)}</span>}
         </div>
-        <button className="icon-btn" onClick={() => downloadFile(f.path, f.name.split('/').pop()).catch(() => {})} title="Descargar" aria-label={`Descargar ${f.name}`}>
+        <button className="icon-btn" onClick={() => downloadFile(f.path, f.name.split('/').pop(), f.size).catch(() => {})} title="Descargar" aria-label={`Descargar ${f.name}`}>
           <DownloadIcon />
         </button>
         {onDelete && (
@@ -882,7 +876,7 @@ function FileTile({ file: f, previewPath, onOpen, onDelete }) {
           <span className="media-img-name" title={name}>{name}</span>
           <span className="media-img-date">{fmtSize(f.size)}{f.lastModified ? ` · ${fmtDate(f.lastModified)}` : ''}</span>
         </div>
-        <button className="icon-btn" onClick={() => downloadFile(f.path, name).catch(() => {})} title="Descargar" aria-label={`Descargar ${name}`}>
+        <button className="icon-btn" onClick={() => downloadFile(f.path, name, f.size).catch(() => {})} title="Descargar" aria-label={`Descargar ${name}`}>
           <DownloadIcon />
         </button>
         {onDelete && (
@@ -948,7 +942,7 @@ function FontSpecimen({ file: f, onDelete }) {
           <span className="typo-name">{name}</span>
           <span className="typo-sub">{extOf(f.name).toUpperCase()} · {fmtSize(f.size)}{f.lastModified ? ` · ${fmtDate(f.lastModified)}` : ''}</span>
         </div>
-        <button className="btn btn-ghost btn-sm" onClick={() => downloadFile(f.path, f.name.split('/').pop()).catch(() => {})}>Descargar</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => downloadFile(f.path, f.name.split('/').pop(), f.size).catch(() => {})}>Descargar</button>
         {onDelete && (
           <button className="icon-btn icon-btn-danger tile-del" onClick={() => onDelete(f)} title="Eliminar" aria-label={`Eliminar ${name}`}>
             <TrashIcon />
@@ -1017,7 +1011,7 @@ function HtmlPreview({ file: f, onDelete }) {
     <div className="html-card">
       <div className="html-card-head">
         <span className="media-img-name" title={name}>{name}</span>
-        <button className="icon-btn" onClick={() => downloadFile(f.path, name).catch(() => {})} title="Descargar" aria-label={`Descargar ${name}`}>
+        <button className="icon-btn" onClick={() => downloadFile(f.path, name, f.size).catch(() => {})} title="Descargar" aria-label={`Descargar ${name}`}>
           <DownloadIcon />
         </button>
         {onDelete && (
