@@ -2781,6 +2781,9 @@ def favorites_get(req: func.HttpRequest) -> func.HttpResponse:
         return auth_err
     try:
         fav = _favorites_store().get(_fav_caller_email(req))
+        names = load_project_names()
+        for col in fav["collections"]:
+            col["items"] = [apply_project_reference_name(it, names) for it in col.get("items", [])]
         return ok({"collections": fav["collections"], "paths": _fav_all_paths(fav)})
     except Exception as exc:
         logging.error("favorites_get: %s", exc)

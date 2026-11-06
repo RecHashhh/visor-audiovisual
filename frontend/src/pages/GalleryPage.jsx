@@ -515,7 +515,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                 <div className="gallery-selbar">
                   {!selMode ? (
                     <button className="btn btn-ghost btn-sm" onClick={() => setSelMode(true)}>
-                      ☑ {me?.caps?.deleteMedia ? 'Seleccionar' : 'Seleccionar para descargar'}
+                      ☑ {me?.caps?.deleteMedia && !collection ? 'Seleccionar' : 'Seleccionar para descargar'}
                     </button>
                   ) : (
                     <>
@@ -526,7 +526,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                         Descargar ZIP ({selected.size})
                       </button>
                       <button className="btn btn-ghost btn-sm" onClick={exitSel}>Cancelar</button>
-                      {me?.caps?.deleteMedia && <button className="btn btn-danger btn-sm" disabled={!selected.size}
+                      {me?.caps?.deleteMedia && !collection && <button className="btn btn-danger btn-sm" disabled={!selected.size}
                         onClick={() => setDeleteTarget({ paths: [...selected], count: selected.size })}>Eliminar ({selected.size})</button>}
                     </>
                   )}
