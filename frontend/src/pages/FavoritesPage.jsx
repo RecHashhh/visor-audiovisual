@@ -173,9 +173,13 @@ export default function FavoritesPage() {
         <div className="fav-detail">
           <button className="btn btn-ghost btn-sm fav-back" onClick={() => setViewingId(null)}>‹ Todas las colecciones</button>
           <div className="fav-col-bar">
-            <div className="fav-col-bar-title">{viewing.name} · {(viewing.items || []).length} archivos
-              {viewing.shared && <span className="badge badge-blue" title={`Dueño: ${viewing.owner} · Miembros: ${(viewing.members || []).join(', ') || 'Ninguno'}`}>Compartida</span>}
-              {viewing.role === 'editor' && <small> de {viewing.owner}</small>}
+            <div className="fav-col-bar-title">
+              <span className="fav-title-name">{viewing.name}</span>
+              <span className="fav-meta">
+                <span>{(viewing.items || []).length} archivos</span>
+                {viewing.shared && <span className="badge badge-blue" title={`Dueño: ${viewing.owner} · Miembros: ${(viewing.members || []).join(', ') || 'Ninguno'}`}>Compartida</span>}
+                {viewing.role === 'editor' && <span className="fav-owner">de {viewing.owner}</span>}
+              </span>
             </div>
             <Actions c={viewing} />
           </div>
@@ -196,9 +200,12 @@ export default function FavoritesPage() {
               <section key={c.id} className="fav-section">
                 <div className="fav-col-bar">
                   <button className="fav-section-title" onClick={() => setViewingId(c.id)} title="Ver todas">
-                    {c.name} <span className="fav-section-count">{items.length} archivos</span>
-                    {c.shared && <span className="badge badge-blue" title={`Dueño: ${c.owner} · Miembros: ${(c.members || []).join(', ') || 'Ninguno'}`}>Compartida</span>}
-                    {c.role === 'editor' && <small> de {c.owner}</small>}
+                    <span className="fav-title-name">{c.name}</span>
+                    <span className="fav-meta">
+                      <span>{(c.items || []).length} archivos</span>
+                      {c.shared && <span className="badge badge-blue" title={`Dueño: ${c.owner} · Miembros: ${(c.members || []).join(', ') || 'Ninguno'}`}>Compartida</span>}
+                      {c.role === 'editor' && <span className="fav-owner">de {c.owner}</span>}
+                    </span>
                   </button>
                   <Actions c={c} />
                 </div>

@@ -2629,7 +2629,10 @@ textarea.field-input { resize: vertical; min-height: 60px; font-family: var(--fo
   display: flex; align-items: center; justify-content: space-between;
   flex-wrap: wrap; gap: 10px; margin-bottom: 12px;
 }
-.fav-col-bar-title { font-weight: 700; color: var(--text); }
+.fav-col-bar-title { display: flex; flex-direction: column; gap: 4px; font-weight: 700; color: var(--text); }
+.fav-title-name { font-weight: 700; font-size: 1.05rem; color: inherit; }
+.fav-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; font-weight: 500; font-size: 0.8rem; color: var(--text-dim); }
+.fav-owner { color: var(--text-dim); font-weight: 400; }
 .fav-col-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .fav-share-box {
   background: var(--bg2);
@@ -2658,14 +2661,18 @@ textarea.field-input { resize: vertical; min-height: 60px; font-family: var(--fo
 }
 
 /* Lista vertical de colecciones + tira horizontal de fotos */
-.fav-sections { display: flex; flex-direction: column; gap: 28px; }
-.fav-section { }
-.fav-section-title {
-  background: none; border: none; padding: 0; cursor: pointer;
-  font-weight: 700; font-size: 1.05rem; color: var(--text); text-align: left;
-  transition: color var(--transition);
+.fav-sections { display: flex; flex-direction: column; gap: 16px; }
+.fav-section {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 14px 16px 16px;
 }
-.fav-section-title:hover { color: var(--accent); }
+.fav-section .fav-col-bar { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.fav-section-title {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
+  background: none; border: none; padding: 0; cursor: pointer;
+  color: var(--text); text-align: left; transition: color var(--transition);
+}
+.fav-section-title:hover .fav-title-name { color: var(--accent); }
 .fav-section-count { font-weight: 500; font-size: 0.82rem; color: var(--text-dim); margin-left: 8px; }
 .fav-section-empty { font-size: 0.85rem; color: var(--text-faint); padding: 6px 0 2px; }
 .fav-strip {
