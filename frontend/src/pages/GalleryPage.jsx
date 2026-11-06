@@ -63,6 +63,17 @@ function orientationOf(width, height) {
   if (width === height) return 'Cuadrada'
   return width > height ? 'Horizontal' : 'Vertical'
 }
+function metaSummary(v) {
+  const f = v?.file || {}
+  return [
+    v?.metaLoading ? 'Calculando…' : (v?.width && v?.height ? `${v.width} × ${v.height} px` : null),
+    v?.width && v?.height ? orientationOf(v.width, v.height) : null,
+    v?.width && v?.height ? aspectRatioOf(v.width, v.height) : null,
+    extOf(f.name || '').toUpperCase() || null,
+    f.size != null ? formatBytes(f.size) : null,
+    f.lastModified ? new Date(f.lastModified).toLocaleDateString('es-EC', { day: 'numeric', month: 'short', year: 'numeric' }) : null,
+  ].filter(Boolean)
+}
 function aspectRatioOf(width, height) {
   if (!width || !height) return 'No disponible'
   const ratio = (width / height).toFixed(2)
@@ -112,7 +123,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
   const [loadError, setLoadError] = useState(null)
   const [filter, setFilter] = useState('all')
   const [order, setOrder] = useState('date')
-  const [lbxPanel, setLbxPanel] = useState(null)   // null | 'details' | 'tags' (fila extra bajo la barra del visor)
+  const [lbxPanel, setLbxPanel] = useState(null)   // null | 'tags' (fila de etiquetas bajo la barra del visor)
   const [sizeFilter, setSizeFilter] = useState('all')
   const [viewer, setViewer] = useState(null)  // { idx, url, file, kind, width, height, metaLoading }
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -707,10 +718,9 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                   <div className="lbx-info">
                     <span className="lbx-name" title={fullscreenViewer.file?.name}>{fullscreenViewer.file?.name || 'Sin nombre'}</span>
                     <span className="lbx-origin">{collection ? originLabel?.(fullscreenViewer.file) : weekLabel(week || '')}</span>
+                    <span className="lbx-meta">{metaSummary(fullscreenViewer).map((part, i) => <span key={i}>{part}</span>)}</span>
                   </div>
                   <div className="lbx-actions">
-                    <button type="button" className={`btn btn-ghost btn-sm ${lbxPanel === 'details' ? 'is-on' : ''}`} aria-expanded={lbxPanel === 'details'}
-                      onClick={() => setLbxPanel(p => (p === 'details' ? null : 'details'))}>Detalles</button>
                     {fullscreenViewer.file && me?.caps?.tagMedia && tagCatalog.length > 0 && (
                       <button type="button" className={`btn btn-ghost btn-sm ${lbxPanel === 'tags' ? 'is-on' : ''}`} aria-expanded={lbxPanel === 'tags'}
                         onClick={() => setLbxPanel(p => (p === 'tags' ? null : 'tags'))}>
@@ -723,16 +733,6 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                 </div>
                 {lbxPanel === 'tags' && fullscreenViewer.file && me?.caps?.tagMedia && (
                   <div className="lbx-panel">{fileTags(fullscreenViewer.file, true)}</div>
-                )}
-                {lbxPanel === 'details' && (
-                  <dl className="lbx-panel lbx-details">
-                    {fullscreenViewer.file?.size != null && <><dt>Tamaño</dt><dd>{formatBytes(fullscreenViewer.file.size)}</dd></>}
-                    <dt>Resolución</dt><dd>{fullscreenViewer.metaLoading ? 'Calculando…' : (fullscreenViewer.width && fullscreenViewer.height ? `${fullscreenViewer.width} × ${fullscreenViewer.height} px` : '—')}</dd>
-                    {fullscreenViewer.width && fullscreenViewer.height && <><dt>Orientación</dt><dd>{orientationOf(fullscreenViewer.width, fullscreenViewer.height)}</dd>
-                      <dt>Proporción</dt><dd>{aspectRatioOf(fullscreenViewer.width, fullscreenViewer.height)}</dd></>}
-                    <dt>Tipo</dt><dd>{extOf(fullscreenViewer.file?.name || '').toUpperCase() || '—'}</dd>
-                    {fullscreenViewer.file?.lastModified && <><dt>Modificado</dt><dd>{formatDate(fullscreenViewer.file.lastModified)}</dd></>}
-                  </dl>
                 )}
               </div>
             </div>,
