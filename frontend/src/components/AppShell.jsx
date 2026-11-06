@@ -18,6 +18,7 @@ const ROUTE_TITLES = [
   ['/redes', 'Redes Sociales'],
   ['/politicas', 'Politicas'],
   ['/upload', 'Subir material'],
+  ['/revision', 'Revisión'],
   ['/accesos', 'Accesos'],
   ['/enlaces', 'Enlaces compartidos'],
 ]

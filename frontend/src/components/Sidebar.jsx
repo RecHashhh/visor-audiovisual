@@ -11,7 +11,8 @@ export default function Sidebar({ open, onNavigate }) {
   const canUpload = hasCap(me, 'upload')
   const canAccess = hasCap(me, 'manageAccess')
   const canShare = hasCap(me, 'share')
-  const showAdmin = canUpload || canAccess || canShare
+  const canReview = hasCap(me, 'review')
+  const showAdmin = canUpload || canAccess || canShare || canReview
 
   return (
     <aside className={`sidebar ${open ? 'open' : ''}`}>
@@ -74,6 +75,16 @@ export default function Sidebar({ open, onNavigate }) {
       {showAdmin && (
         <div className="sidebar-footer">
           <div className="sidebar-group-label">Administración</div>
+          {canReview && (
+            <NavLink to="/revision" onClick={onNavigate} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
+              <span className="sidebar-link-icon">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m4 7 2 2 4-4M13 7h7M4 15l2 2 4-4M13 15h7" />
+                </svg>
+              </span>
+              <span className="sidebar-link-label">Revisión</span>
+            </NavLink>
+          )}
           {canUpload && (
             <NavLink to="/upload" onClick={onNavigate} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}>
               <span className="sidebar-link-icon">

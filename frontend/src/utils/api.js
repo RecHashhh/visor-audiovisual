@@ -106,6 +106,8 @@ async function apiFetchBlob(path, options = {}) {
 }
 
 export const api = {
+  getReview:       () => apiFetch('/api/review'),
+  updateReview:    (code, body) => apiFetch(`/api/review/${encodeURIComponent(code)}`, { method: 'POST', body: JSON.stringify(body) }),
   getMe:            ()           => apiFetch('/api/me'),
   getAccessConfig:  ()           => apiFetch('/api/access'),
   saveAccessConfig: (config)     => apiFetch('/api/access', { method: 'POST', body: JSON.stringify(config) }),

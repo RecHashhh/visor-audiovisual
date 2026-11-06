@@ -29,6 +29,7 @@ const UploadPage       = lazy(() => import('./pages/UploadPage'))
 const AccessPage       = lazy(() => import('./pages/AccessPage'))
 const SectionsPage     = lazy(() => import('./pages/SectionsPage'))
 const SharesPage       = lazy(() => import('./pages/SharesPage'))
+const ReviewPage       = lazy(() => import('./pages/ReviewPage'))
 
 function PageLoader() {
   return (
@@ -160,6 +161,7 @@ function AppRoutes() {
           <Route path="/redes-sociales"         element={<Navigate to="/redes" replace />} />
 
           <Route path="/upload"    element={<RequireCap cap="upload"><UploadPage /></RequireCap>} />
+          <Route path="/revision"  element={<RequireCap cap="review"><ReviewPage /></RequireCap>} />
           <Route path="/accesos"   element={<RequireCap cap="manageAccess"><AccessPage /></RequireCap>} />
           <Route path="/secciones" element={<RequireCap cap="manageAccess"><SectionsPage /></RequireCap>} />
           <Route path="/enlaces"   element={<RequireCap cap="share"><SharesPage /></RequireCap>} />

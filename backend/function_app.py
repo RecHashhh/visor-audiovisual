@@ -1470,8 +1470,175 @@ def thumb(req: func.HttpRequest) -> func.HttpResponse:
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# GET /api/projects
+# Revisión de proyectos
 # ══════════════════════════════════════════════════════════════════════════════
+def load_review_base() -> list:
+    with open(os.path.join(os.path.dirname(__file__), "hub-projects-review.json"), encoding="utf-8") as source:
+        return json.load(source)
+
+
+def review_blob_name() -> str:
+    return f"{CONFIG_PREFIX.strip('/')}/review.json"
+
+
+def review_projects(base: list, indexed: list, data: dict, names: dict) -> list:
+    index = {p["code"]: p for p in indexed}
+    projects = {p["code"]: p for p in base}
+    for code in data.get("extra", []):
+        projects.setdefault(code, {"code": code, "name": code})
+    result = []
+    base_codes = {p["code"] for p in base}
+    for code, project in projects.items():
+        source = index.get(code, project)
+        state = data.get("projects", {}).get(code, {})
+        result.append({"code": code, "name": source.get("name", project["name"]),
+                       "photoCount": source.get("photoCount", 0), "videoCount": source.get("videoCount", 0),
+                       "weeks": source.get("weeks", 0), "lastModified": source.get("lastModified"),
+                       "missing": code not in index, "extra": code not in base_codes,
+                       "assignee": "", "status": "pendiente", "note": "", "updatedAt": None,
+                       "updatedBy": None, "reviewedAt": None, "reviewedBy": None, **state})
+    return apply_project_names(result, names)
+
+
+def validate_review_patch(body: Any, members: list) -> dict:
+    if not isinstance(body, dict) or not body or set(body) - {"assignee", "status", "note"}:
+        raise ValueError("Indica responsable, estado o nota")
+    patch = dict(body)
+    if "assignee" in patch:
+        if not isinstance(patch["assignee"], str):
+            raise ValueError("Responsable inválido")
+        patch["assignee"] = patch["assignee"].strip().lower()
+        if patch["assignee"] and patch["assignee"] not in members:
+            raise ValueError("El responsable debe pertenecer al Equipo TI")
+    if "status" in patch and patch["status"] not in ("pendiente", "en-revision", "revisado"):
+        raise ValueError("Estado inválido")
+    if "note" in patch and (not isinstance(patch["note"], str) or len(patch["note"]) > 500):
+        raise ValueError("La nota admite hasta 500 caracteres")
+    return patch
+
+
+def update_review_state(data: dict, code: str, patch: dict, email: str, now: str) -> dict:
+    data = data or {}
+    states = dict(data.get("projects", {}))
+    previous = states.get(code, {})
+    entry = {"assignee": "", "status": "pendiente", "note": "", "reviewedAt": None,
+             "reviewedBy": None, **previous, **patch, "updatedAt": now, "updatedBy": email}
+    if "status" in patch and patch["status"] != previous.get("status", "pendiente"):
+        entry["reviewedAt"] = now if patch["status"] == "revisado" else None
+        entry["reviewedBy"] = email if patch["status"] == "revisado" else None
+    states[code] = entry
+    return {**data, "projects": states}
+
+
+def review_round_robin(data: dict, codes: list, assignees: list, only_unassigned: bool,
+                       email: str, now: str) -> dict:
+    position = 0
+    for code in dict.fromkeys(codes):
+        if only_unassigned and (data or {}).get("projects", {}).get(code, {}).get("assignee"):
+            continue
+        data = update_review_state(data, code, {"assignee": assignees[position % len(assignees)]}, email, now)
+        position += 1
+    return data or {}
+
+
+def review_codes(value: Any) -> list:
+    if not isinstance(value, list) or any(not isinstance(code, str) for code in value):
+        raise ValueError("Los códigos deben ser una lista")
+    for code in value:
+        validate_project_id(code)
+    return list(dict.fromkeys(value))
+
+
+@app.route(route="review", methods=["GET", "OPTIONS"])
+def get_review(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    perms, auth_err = require_perms(req, cap="review")
+    if auth_err:
+        return auth_err
+    try:
+        indexed = load_json_blob(index_projects_blob_name())
+        if not isinstance(indexed, list):
+            return err("El índice de proyectos no está disponible", 503)
+        names = load_project_names()
+        return ok({"projects": review_projects(load_review_base(), indexed,
+                                              load_json_blob(review_blob_name()) or {}, names),
+                   "assignees": access_groups(load_access_config())["equipo-ti"]["members"],
+                   "availableProjects": apply_project_names([
+                       {"code": p["code"], "name": p.get("name", p["code"]),
+                        "photoCount": p.get("photoCount", 0), "videoCount": p.get("videoCount", 0),
+                        "weeks": p.get("weeks", 0), "lastModified": p.get("lastModified")} for p in indexed], names)})
+    except Exception as exc:
+        logging.exception("get_review")
+        return err(str(exc), 500)
+
+
+@app.route(route="review/{code}", methods=["POST", "OPTIONS"])
+def post_review(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    perms, auth_err = require_perms(req, cap="review")
+    if auth_err:
+        return auth_err
+    try:
+        code = req.route_params.get("code", "")
+        body = req.get_json()
+        if not isinstance(body, dict):
+            raise ValueError("Solicitud inválida")
+        base = {p["code"] for p in load_review_base()}
+        members = access_groups(load_access_config())["equipo-ti"]["members"]
+        now = datetime.now(timezone.utc).isoformat()
+        email = perms["email"]
+        if code == "assign":
+            codes = review_codes(body.get("codes"))
+            people = body.get("assignees")
+            if not isinstance(people, list) or not people:
+                raise ValueError("Elige al menos un responsable")
+            people = list(dict.fromkeys(validate_review_patch({"assignee": p}, members)["assignee"] for p in people))
+            if not all(people):
+                raise ValueError("Elige responsables del Equipo TI")
+            only = body.get("onlyUnassigned", False)
+            if not isinstance(only, bool):
+                raise ValueError("onlyUnassigned debe ser booleano")
+
+            def transform(data):
+                data = data or {}
+                if set(codes) - base - set(data.get("extra", [])):
+                    raise ValueError("Proyecto fuera de la lista de revisión")
+                return review_round_robin(data, codes, people, only, email, now)
+        elif code == "extra":
+            add, remove = review_codes(body.get("add", [])), review_codes(body.get("remove", []))
+            indexed = load_json_blob(index_projects_blob_name())
+            if not isinstance(indexed, list):
+                return err("El índice de proyectos no está disponible", 503)
+            if (set(add) | set(remove)) - {p["code"] for p in indexed}:
+                raise ValueError("El proyecto debe existir en el índice")
+            if set(remove) & base:
+                raise ValueError("No se puede quitar un proyecto de la lista base")
+
+            def transform(data):
+                data = data or {}
+                extra = [c for c in data.get("extra", []) if c not in remove and c not in base]
+                return {**data, "extra": list(dict.fromkeys(extra + [c for c in add if c not in base]))}
+        else:
+            validate_project_id(code)
+            patch = validate_review_patch(body, members)
+
+            def transform(data):
+                data = data or {}
+                if code not in base and code not in data.get("extra", []):
+                    raise ValueError("Proyecto fuera de la lista de revisión")
+                return update_review_state(data, code, patch, email, now)
+        saved = update_json_blob(review_blob_name(), transform)
+        return ok({"saved": True, "projects": saved.get("projects", {}), "extra": saved.get("extra", [])})
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception as exc:
+        logging.exception("post_review")
+        return err(str(exc), 500)
+
+
+# GET /api/projects
 @app.route(route="projects", methods=["GET", "OPTIONS"])
 def get_projects(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
