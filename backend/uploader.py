@@ -419,6 +419,7 @@ def list_drive_tree_budgeted(
     pending: List[list],
     budget_s: float = 120.0,
     recursive: bool = True,
+    include_folders: bool = False,
 ) -> Tuple[List[dict], List[list]]:
     """Recorre el árbol de carpetas por LOTES acotados en tiempo, para que el
     'Analizar' de la web no choque con el timeout HTTP aunque Graph throttlee.
@@ -435,10 +436,13 @@ def list_drive_tree_budgeted(
             # Reintentos cortos y sin esperas largas: si Graph throttlea fuerte,
             # devolvemos la carpeta a la cola y cortamos la tanda (el cliente
             # reintenta luego), en vez de quemar el timeout del request.
-            children = _graph_list_all(token, url, max_retries=3, max_wait=15)
+            page = _graph_get(token, url, max_retries=3, max_wait=15)
+            children = page.get("value", [])
         except Exception:
             pend.insert(0, [url, rel])
             break
+        if page.get("@odata.nextLink"):
+            pend.insert(0, [page["@odata.nextLink"], rel])
         for item in children:
             if "file" in item:
                 pr = item.get("parentReference", {})
@@ -455,12 +459,16 @@ def list_drive_tree_budgeted(
                     # copia falla y el reintento pide una fresca solo para esa.
                     "downloadUrl": item.get("@microsoft.graph.downloadUrl"),
                 })
-            elif recursive and "folder" in item:
+            elif "folder" in item:
                 did = item.get("parentReference", {}).get("driveId")
                 iid = item.get("id")
                 if did and iid:
                     child_rel = f"{rel}/{item.get('name', '')}" if rel else item.get("name", "")
-                    pend.append([f"{GRAPH_BASE}/drives/{did}/items/{iid}/children", child_rel])
+                    child_url = f"{GRAPH_BASE}/drives/{did}/items/{iid}/children"
+                    if include_folders:
+                        files.append({"folder": True, "name": item.get("name", ""), "childrenUrl": child_url, "relDir": child_rel})
+                    if recursive:
+                        pend.append([child_url, child_rel])
     return files, pend
 
 
@@ -560,6 +568,8 @@ def planificar_obra(archivos: List[dict], base: str, prefijo_jpg: str, indice: d
         if origen in indice["origenes"]:
             ruta = indice.get("rutas_origen", {}).get(origen, ruta_antigua)
             status = "existe"
+        elif origen in indice.get("reservas", {}):
+            ruta, status = indice["reservas"][origen], "nuevo"
         elif ruta_antigua in rutas and ruta_antigua not in indice["con_origen"] and rutas[ruta_antigua] == size:
             ruta, status = ruta_antigua, "existe"
         else:
@@ -1310,7 +1320,7 @@ def _upload_file_in_blocks(
     blob_client.commit_block_list(
         [BlobBlock(b) for b in block_ids],
         metadata=metadata,
-        etag="*", match_condition=MatchConditions.IfMissing,
+        match_condition=MatchConditions.IfMissing,
         content_settings=ContentSettings(content_type=content_type),
     )
 

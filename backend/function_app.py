@@ -425,10 +425,11 @@ def load_json_blob_etag(blob_name):
 
 def save_json_blob_etag(blob_name, payload, etag):
     bc = get_blob_service().get_blob_client(container=CONTAINER, blob=blob_name)
+    # Con IfMissing NO se pasa etag: el SDK 12.19 no lo consume y la petición falla.
+    conditions = ({"etag": etag, "match_condition": MatchConditions.IfNotModified} if etag is not None
+                  else {"match_condition": MatchConditions.IfMissing})
     bc.upload_blob(json.dumps(payload, ensure_ascii=False, default=str), overwrite=True,
-                   etag=etag if etag is not None else "*",
-                   match_condition=MatchConditions.IfNotModified if etag is not None else MatchConditions.IfMissing,
-                   content_type="application/json")
+                   content_type="application/json", **conditions)
 
 
 def clear_index_related_cache() -> None:
@@ -3858,7 +3859,7 @@ def _remote_copy_one(svc, token: str, drive_id: str, item_id: str, blob_path: st
             from azure.core import MatchConditions
             from azure.core.exceptions import HttpResponseError
             try:
-                bc.start_copy_from_url(url, metadata=metadata, etag="*", match_condition=MatchConditions.IfMissing)
+                bc.start_copy_from_url(url, metadata=metadata, match_condition=MatchConditions.IfMissing)
             except HttpResponseError as exc:
                 if exc.status_code not in (409, 412):
                     raise
@@ -3879,14 +3880,16 @@ def _remote_copy_one(svc, token: str, drive_id: str, item_id: str, blob_path: st
 
 def _copy_status_counts(prefix: str, expected: set):
     """Cuenta cuántos de los blobPaths esperados ya se copiaron, están en curso o
-    fallaron (1 sola operación de listado), y devuelve `notDone`: los que aún
+    fallaron (un listado por carpeta padre), y devuelve `notDone`: los que aún
     falta reintentar (no aparecen, o copia fallida). Los 'pending' NO van en
     notDone (Azure los está copiando)."""
     svc = get_blob_service()
     cc = svc.get_container_client(CONTAINER)
     present = {}
     errors = []
-    for b in cc.list_blobs(name_starts_with=prefix, include=["copy", "metadata"]):
+    folders = {p.rsplit("/", 1)[0] + "/" for p in expected if p.startswith(prefix)}
+    blobs = (b for folder in sorted(folders) for b in cc.list_blobs(name_starts_with=folder, include=["copy", "metadata"]))
+    for b in blobs:
         if b.name not in expected or _is_dir_marker(b):
             continue
         try:
@@ -3911,7 +3914,7 @@ def _copy_status_counts(prefix: str, expected: set):
                 done += 1
     return {"total": len(expected), "done": done, "pending": pending,
             "failed": failed, "missing": len(not_done) - failed,
-            "notDone": not_done[:3000], "errors": errors}
+            "notDone": not_done, "pendingPaths": [p for p, s in present.items() if s == "pending"], "errors": errors}
 
 
 def _remote_transfer_one(svc, token: str, dl_url: str, blob_path: str, name: str, metadata: Optional[dict] = None):
@@ -3989,6 +3992,112 @@ def upload_remote_batch(req: func.HttpRequest) -> func.HttpResponse:
         })
     except Exception as exc:
         logging.error("upload_remote_batch: %s", exc)
+        return err(str(exc), 500)
+
+
+_REMOTE_BLOCK_BYTES = 100 * 1024 * 1024
+
+
+def _remote_block_copy(bc, token, item, budget=120):
+    """Reanuda bloques sin descargar bytes a la Function; publica solo al final."""
+    from azure.storage.blob import ContentSettings, StandardBlobTier
+    from azure.core.exceptions import HttpResponseError
+    started = time.monotonic()
+    size, metadata = item["size"], item["metadata"]
+    ids = [base64.b64encode(f"{i:06d}".encode()).decode() for i in range((size + _REMOTE_BLOCK_BYTES - 1) // _REMOTE_BLOCK_BYTES)]
+    lengths = [min(_REMOTE_BLOCK_BYTES, size - i * _REMOTE_BLOCK_BYTES) for i in range(len(ids))]
+    def committed():
+        try:
+            props = bc.get_blob_properties(retry_total=0, connection_timeout=5, read_timeout=10)
+        except ResourceNotFoundError:
+            return False
+        if props.metadata != metadata or props.size != size or (props.copy and props.copy.status not in (None, "success")):
+            raise ValueError("Destino ocupado por otro origen o copia incompleta; vuelve a analizar")
+        return True
+    if committed():
+        return {"done": True, "stagedBytes": size, "totalBytes": size, "status": "existe"}
+    staged = set()
+    result = {"done": False, "stagedBytes": 0, "totalBytes": size}
+    try:
+        try:
+            _, blocks = bc.get_block_list("uncommitted", retry_total=0, connection_timeout=5, read_timeout=10)
+        except ResourceNotFoundError:
+            blocks = []
+        expected = dict(zip(ids, lengths))
+        staged = {b.id for b in blocks if b.id in expected and b.size == expected[b.id]}
+        result["stagedBytes"] = sum(n for bid, n in zip(ids, lengths) if bid in staged)
+        url = uploader.graph_item_download_url(token, item["driveId"], item["itemId"])
+        if not url:
+            raise RuntimeError("No se pudo obtener la URL de descarga")
+        for i, bid in enumerate(ids):
+            if bid in staged:
+                continue
+            # Un bloque de 100 MiB puede tardar ~1 min si SharePoint entrega lento:
+            # no se empieza uno que no alcance a terminar dentro del presupuesto.
+            left = budget - (time.monotonic() - started)
+            if left < 40 and result["stagedBytes"] > 0:
+                return result
+            bc.stage_block_from_url(bid, url, source_offset=i * _REMOTE_BLOCK_BYTES, source_length=lengths[i],
+                                    timeout=90, retry_total=0, connection_timeout=5, read_timeout=95)
+            result["stagedBytes"] += lengths[i]
+        if time.monotonic() - started >= budget - 2:
+            return result
+        try:
+            bc.commit_block_list(ids, metadata=metadata,
+                                 content_settings=ContentSettings(content_type=uploader.content_type_para(unquote(metadata["srcname"]))),
+                                 standard_blob_tier=StandardBlobTier.COOL, match_condition=MatchConditions.IfMissing,
+                                 retry_total=0, connection_timeout=5, read_timeout=15, timeout=15)
+        except HttpResponseError as exc:
+            if exc.status_code not in (409, 412) or not committed():
+                raise
+        result.update(done=True, status="ok")
+    except ValueError:
+        raise
+    except Exception as exc:
+        result["error"] = str(exc)
+    return result
+
+
+@app.route(route="upload/remote/block-copy", methods=["POST", "OPTIONS"])
+def upload_remote_block_copy(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    _, auth_err = require_perms(req, cap="upload")
+    if auth_err:
+        return auth_err
+    try:
+        body = req.get_json()
+        code, name = body.get("projectCode"), body.get("projectName")
+        subfolder = _sanitize_folder_path(body.get("subfolder", ""))
+        if not all(isinstance(v, str) and v.strip() and "/" not in v and "\\" not in v and v.strip() not in (".", "..") for v in (code, name)) or subfolder is None:
+            raise ValueError("Proyecto o subcarpeta inválidos")
+        item = dict(body["item"])
+        size = item.get("size")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 1024 ** 3 or size > _REMOTE_BLOCK_BYTES * 50000:
+            raise ValueError("Tamaño de video inválido")
+        metadata = item["metadata"]
+        if not isinstance(metadata["srcname"], str) or not metadata["srcname"] or not isinstance(metadata["srcsize"], str) or metadata["srcsize"] != str(size):
+            raise ValueError("Metadata de origen inválida")
+        item["metadata"] = uploader.metadata_origen(unquote(metadata["srcname"]), size)
+        if not item["metadata"]["srcname"]:
+            raise ValueError("Nombre de origen inválido")
+        folder = uploader._resolve_carpeta(code.strip(), name.strip())
+        prefix = f"{folder}/{subfolder}/" if subfolder else f"{folder}/"
+        path = item.get("blobPath")
+        if not isinstance(path, str) or not path.startswith(prefix) or _sanitize_folder_path(path) != path or not all(isinstance(item.get(k), str) and item[k] for k in ("driveId", "itemId")):
+            raise ValueError("Ruta u origen no válidos")
+    except (ValueError, KeyError, TypeError, AttributeError):
+        return err("Proyecto, archivo o metadata de origen inválidos; vuelve a analizar", 400)
+    try:
+        bc = get_blob_service().get_blob_client(container=CONTAINER, blob=path)
+        result = _remote_block_copy(bc, uploader._get_graph_token(), item)
+        if result["done"]:
+            clear_index_related_cache()
+        return ok(result)
+    except ValueError as exc:
+        return err(str(exc), 409)
+    except Exception as exc:
+        logging.exception("upload_remote_block_copy")
         return err(str(exc), 500)
 
 
@@ -4102,7 +4211,7 @@ def upload_remote_list(req: func.HttpRequest) -> func.HttpResponse:
             # Primera llamada: resolver el origen y sembrar la raíz.
             _, base_drive, src_folder = _remote_media_source(body, token)
             pending = [[uploader.children_url(base_drive, src_folder), ""]]
-        files, remaining = uploader.list_drive_tree_budgeted(token, pending, budget, recursive=body.get("recursive", True))
+        files, remaining = uploader.list_drive_tree_budgeted(token, pending, budget, recursive=False if body.get("firstLevel") else body.get("recursive", True), include_folders=bool(body.get("firstLevel")))
         return ok({
             "files": files, "found": len(files),
             "cursor": {"pending": remaining}, "done": len(remaining) == 0,
@@ -4112,6 +4221,43 @@ def upload_remote_list(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:
         logging.error("upload_remote_list: %s", exc)
         return err(str(exc), 500)
+
+
+def _prepare_remote_project_jobs(items, base, prefijo, indice):
+    """Reserva el nombre de videos grandes aunque otros archivos terminen antes.
+
+    La reserva vive en configuración: el video sin commit sigue siendo nuevo.
+    """
+    from copy import deepcopy
+    key = f"{CONFIG_PREFIX.rstrip('/')}/remote-block-copies/{quote(base, safe='')}.json"
+    jobs = []
+    def plan(current):
+        reservations = deepcopy(current or [])
+        index = deepcopy(indice)
+        index["reservas"] = {}
+        for row in reservations:
+            path, meta = row["blobPath"], row["metadata"]
+            origin = uploader.clave_origen(unquote(meta["srcname"]), int(meta["srcsize"]))
+            if path in index["rutas"] or origin in index["origenes"]:
+                continue
+            index["reservas"][origin] = path
+            index["rutas"][path] = int(meta["srcsize"])
+            index["con_origen"].add(path)
+            match = re.match(r"^([A-Z0-9]+_\d{8})_(\d{3,})\.", path.rsplit("/", 1)[-1])
+            if match:
+                index["maximos"][match[1]] = max(index["maximos"].get(match[1], 0), int(match[2]))
+        jobs[:] = uploader._preparar_trabajos(items, base, prefijo, index)
+        occupied = {row["blobPath"] for row in reservations}
+        for job in jobs:
+            if job["status"] == "nuevo" and job.get("size_bytes", 0) >= 1024 ** 3 and job["blob_path"] not in occupied:
+                reservations.append({"blobPath": job["blob_path"], "metadata": job["metadata"]})
+                occupied.add(job["blob_path"])
+        return reservations
+    if any(item.get("size", 0) >= 1024 ** 3 for item in items):
+        update_json_blob(key, plan)
+    else:
+        plan(load_json_blob(key))
+    return jobs
 
 
 @app.route(route="upload/remote/prepare", methods=["POST", "OPTIONS"])
@@ -4127,7 +4273,7 @@ def upload_remote_prepare(req: func.HttpRequest) -> func.HttpResponse:
     if not isinstance(files_in, list):
         return err("files requerido", 400)
     if len(files_in) > 20000:
-        return err("Demasiados archivos (máx 20000 por análisis)", 400)
+        return err('Demasiados archivos (máx 20000 por análisis). Activa «Dividir por subcarpetas»; si ya está activo, divide esta subcarpeta en el origen.', 400)
     destination = (body.get("destination") or "project").strip().lower()
 
     try:
@@ -4187,7 +4333,7 @@ def upload_remote_prepare(req: func.HttpRequest) -> func.HttpResponse:
             "relativePath": f.get("relDir", ""),
         } for f in files_in]
         indice = uploader.construir_indice_origen(get_blob_service(), prefix=f"{base}/")
-        trabajos = uploader._preparar_trabajos(items, base, prefijo, indice)
+        trabajos = _prepare_remote_project_jobs(items, base, prefijo, indice)
         dl_by_item = {f.get("itemId"): f.get("downloadUrl") for f in files_in}
         files = []
         nuevos = existentes = total_bytes = 0

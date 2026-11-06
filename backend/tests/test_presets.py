@@ -100,6 +100,30 @@ class PresetsTests(unittest.TestCase):
                 self.store.run_result(before['id'], {**body, key: value}, 'x')
         self.assertEqual(self.store.get()[0]['lastRun'], result)
 
+    def test_analisis_validado_preservado_al_editar_y_sin_alterar_last_run(self):
+        row = self.store.get()[0]
+        previous = self.store.run_result(row['id'], dict(nuevos=1, existentes=0, subidos=1, errores=0, duracionS=2), 'autor')
+        body = dict(kind='analysis', total=5, nuevos=2, existentes=3, bytesNuevos=1024, maxFileBytes=900, by='falso', at='falso')
+        result = self.store.run_result(row['id'], body, 'real')
+        edited = self.store.save({**row, 'lastAnalysis': {}, 'splitBySubfolder': True}, 'editor')
+        self.assertEqual(edited['lastAnalysis'], result)
+        self.assertEqual(edited['lastRun'], previous)
+        self.assertEqual(result['by'], 'real')
+        self.assertNotEqual(result['at'], 'falso')
+        for key in ('total', 'nuevos', 'existentes', 'bytesNuevos', 'maxFileBytes'):
+            for value in (-1, True, '3', 1.5, float('nan'), float('inf'), 10 ** 400):
+                with self.subTest(key=key, value=str(value)), self.assertRaises(ValueError):
+                    self.store.run_result(row['id'], {**body, key: value}, 'x')
+        for invalid in ({**body, 'total': 1}, {**body, 'kind': 'otro'}, {k: v for k, v in body.items() if k != 'maxFileBytes'}):
+            with self.assertRaises(ValueError): self.store.run_result(row['id'], invalid, 'x')
+        self.assertEqual(self.store.get()[0]['lastAnalysis'], result)
+
+    def test_division_nueva_por_defecto_y_existente_optativa(self):
+        self.assertTrue(validate_preset(self.body)['splitBySubfolder'])
+        self.assertFalse(validate_preset({**self.body, 'id': 'anterior'})['splitBySubfolder'])
+        self.assertFalse(validate_preset({**self.body, 'splitBySubfolder': False})['splitBySubfolder'])
+        with self.assertRaises(ValueError): validate_preset({**self.body, 'splitBySubfolder': 'true'})
+
 
 class PresetEndpointsTests(unittest.TestCase):
     def setUp(self):
@@ -128,6 +152,9 @@ class PresetEndpointsTests(unittest.TestCase):
         status, result = self.call(app.upload_preset_result, 'POST',
                                   dict(nuevos=2, existentes=5, subidos=2, errores=0, duracionS=6), created['id'])
         self.assertEqual((status, result['subidos'], result['by']), (200, 2, 'ti@ripconciv.com'))
+        status, result = self.call(app.upload_preset_result, 'POST',
+                                  dict(kind='analysis', total=7, nuevos=2, existentes=5, bytesNuevos=900, maxFileBytes=800), created['id'])
+        self.assertEqual((status, result['bytesNuevos'], result['by']), (200, 900, 'ti@ripconciv.com'))
         self.assertEqual(self.call(app.delete_upload_preset, 'DELETE', pid=created['id'])[0], 200)
         self.assertEqual(self.call(app.delete_upload_preset, 'DELETE', pid=created['id'])[0], 404)
         self.assertEqual(self.call(app.upload_presets, 'POST')[0], 400)

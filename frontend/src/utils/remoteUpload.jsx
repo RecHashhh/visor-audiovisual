@@ -46,70 +46,91 @@ export function UploadLog({ lines }) {
   )
 }
 
-export async function runCopyMigration({ todo, issue, statusBase, onProgress, onEvent = () => {} }) {
-  const byBlob = new Map(todo.map(f => [f.blobPath, f]))
-  const allPaths = todo.map(f => f.blobPath)
-  const sleep = ms => new Promise(r => setTimeout(r, ms))
-  let remaining = [...allPaths]   // los que faltan por copiar bien
-  const issueErrors = new Set()
-  let round = 0
+export const LARGE_FILE_BYTES = 1024 ** 3
+export const formatGB = bytes => `${((bytes || 0) / 1024 ** 3).toLocaleString('es-EC', { maximumFractionDigits: 1 })} GB`
 
-  while (remaining.length && round < 10) {
-    round++
-    // 1) Lanzar copias de los que faltan, en tandas (con reintento si throttlea).
-    let queue = remaining.map(bp => byBlob.get(bp)).filter(Boolean)
-    let issued = 0
-    let requestErrors = 0
+export async function runCopyMigration({ todo, issue, statusBase, onProgress = () => {}, onEvent = () => {} }) {
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+  const large = statusBase.projectCode ? todo.filter(f => f.size >= LARGE_FILE_BYTES) : []
+  const normal = todo.filter(f => !statusBase.projectCode || !(f.size >= LARGE_FILE_BYTES))
+  const byBlob = new Map(normal.map(f => [f.blobPath, f]))
+  const completed = new Set()
+  const totalBytes = todo.reduce((n, f) => n + (f.size || 0), 0)
+  let blockBytes = 0
+  const report = (phase, pending = 0, issued = 0) => onProgress({ phase, issued, total: todo.length,
+    done: completed.size, pending, failed: 0, totalBytes,
+    doneBytes: todo.reduce((n, f) => n + (completed.has(f.blobPath) ? f.size || 0 : 0), 0) + blockBytes })
+  let remaining = normal.map(f => f.blobPath)
+  for (let round = 0; remaining.length && round < 10; round++) {
+    let queue = remaining.map(bp => byBlob.get(bp))
+    let issued = 0, requestErrors = 0
     while (queue.length) {
       const chunk = queue.slice(0, REMOTE_CHUNK)
-      let res
       try {
-        // Reusa la dlUrl del Analizar (sin llamar a Graph). En reintentos
-        // (round > 1) pide fresca por si caducó.
-        res = await issue(chunk.map(f => ({ driveId: f.driveId, itemId: f.itemId, blobPath: f.blobPath, name: f.name, dlUrl: f.dlUrl, metadata: f.metadata })), round > 1)
+        const res = await issue(chunk.map(f => ({ driveId: f.driveId, itemId: f.itemId, blobPath: f.blobPath,
+          name: f.name, dlUrl: f.dlUrl, metadata: f.metadata })), round > 0)
+        const processed = res.processed ?? chunk.length
+        if (!processed) throw new Error('La copia no avanza; vuelve a ejecutar.')
+        requestErrors = 0; issued += processed; queue = queue.slice(processed)
+        for (const r of res.results || []) if (r.status === 'error') onEvent(`${r.blobPath}: ${r.error}`, true)
+        onEvent(`Copiando ${issued}/${normal.length}…`); report('issuing', 0, issued)
       } catch (e) {
         onEvent(`Error al solicitar la copia: ${e.message}`, true)
         if (++requestErrors >= 5) throw e
-        await sleep(15000); continue
+        await sleep(15000)
       }
-      const processed = res.processed ?? chunk.length
-      if (!processed && ++requestErrors >= 5) throw new Error('La copia no avanza; vuelve a intentar la migración.')
-      if (processed) requestErrors = 0
-      issued += processed
-      queue = queue.slice(processed)
-      const errs = (res.results || []).filter(r => r.status === 'error').length
-      for (const result of res.results || []) {
-        if (result.status === 'error') { issueErrors.add(result.blobPath); onEvent(`${result.blobPath}: ${result.error}`, true) }
-        else issueErrors.delete(result.blobPath)
-      }
-      onEvent(`Copiando ${issued}/${todo.length}…`)
-      onProgress({ phase: 'issuing', issued, total: todo.length, done: 0, pending: 0, failed: 0 })
-      if (errs > chunk.length / 2) await sleep(10000)   // muchos errores = throttling → respirar
     }
-    // 2) Sondear hasta que Azure termine de copiar (los 'pending').
-    let st
+    let watching = [...remaining], pending = [], retry = [], previous = '', errors = 0
     do {
-      st = await api.postRemoteCopyStatus({ ...statusBase, blobPaths: allPaths })
-      const failedPaths = new Set([...(st.notDone || []), ...issueErrors])
-      const copied = Math.max(0, st.total - failedPaths.size - (st.pending || 0))
-      onEvent(`Copiando ${copied}/${st.total}… (${st.pending || 0} en curso)`)
-      for (const error of st.errors || []) onEvent(`${error.blobPath}: ${error.error}`, true)
-      onProgress({ phase: 'copying', total: st.total, done: copied, pending: st.pending, failed: failedPaths.size })
-      if ((st.pending || 0) > 0) await sleep(3000)
-    } while ((st.pending || 0) > 0)
-    // 3) Lo que no quedó (missing/failed por throttling) se reintenta en la próxima ronda.
-    remaining = [...new Set([...(st.notDone || []), ...issueErrors])].filter(bp => byBlob.has(bp))
+      let st
+      try { st = await api.postRemoteCopyStatus({ ...statusBase, blobPaths: watching }); errors = 0 }
+      catch (e) { if (++errors >= 5) throw e; await sleep(10000); continue }
+      pending = st.pendingPaths || []
+      retry = st.notDone || []
+      const unresolved = new Set([...pending, ...retry])
+      for (const bp of watching) if (!unresolved.has(bp)) completed.add(bp)
+      watching = [...unresolved]
+      for (const e of st.errors || []) onEvent(`${e.blobPath}: ${e.error}`, true)
+      onEvent(`Copiando ${completed.size}/${todo.length}… (${pending.length} en curso)`)
+      report('copying', pending.length)
+      const signature = [...watching].sort().join('|')
+      if (pending.length) await sleep(signature === previous ? 10000 : 3000)
+      previous = signature
+    } while (pending.length || errors)
+    remaining = retry.filter(bp => byBlob.has(bp))
     if (remaining.length) await sleep(12000)
   }
-  const done = allPaths.length - remaining.length
-  return { done, failed: remaining.length, total: allPaths.length }
+  for (const [i, f] of large.entries()) {
+    let failures = 0, previousBytes = -1
+    blockBytes = 0
+    while (true) {
+      try {
+        const res = await api.postRemoteBlockCopy({ ...statusBase, item: {
+          driveId: f.driveId, itemId: f.itemId, blobPath: f.blobPath, size: f.size, metadata: f.metadata } })
+        blockBytes = res.stagedBytes || 0
+        onEvent(`Video grande ${i + 1}/${large.length}: ${f.orig || f.name} · ${formatGB(blockBytes).replace(' GB', '')} de ${formatGB(f.size)}`)
+        report('copying', 1)
+        if (res.done) { completed.add(f.blobPath); blockBytes = 0; report('copying'); break }
+        failures = blockBytes > previousBytes ? 0 : failures + 1
+        previousBytes = blockBytes
+        if (res.error) onEvent(res.error, true)
+        if (failures >= 5) throw new Error('La copia por bloques no avanza; vuelve a ejecutar para continuar.')
+        await sleep(res.error ? 10000 : 1000)
+      } catch (e) {
+        if (++failures >= 5) throw e
+        onEvent(`Error en video grande: ${e.message}. Reintentando…`, true)
+        await sleep(10000)
+      }
+    }
+  }
+  return { done: completed.size, failed: todo.length - completed.size, total: todo.length }
 }
 
 // Análisis REANUDABLE: lista el árbol de SharePoint/OneDrive por tandas acotadas
 // en tiempo (cada llamada vuelve antes del timeout HTTP aunque Graph throttlee),
 // y al final arma el plan (blobPath + nuevo/existe) en una sola llamada sin Graph.
 export async function runResumableAnalyze({ listPayload, preparePayload, onCount, onEvent = () => {} }) {
-  let cursor
+  let cursor = listPayload.cursor
   let all = []
   let guard = 0
   let stale = 0   // tandas seguidas sin avance (throttling) → esperar progresivamente
@@ -149,8 +170,8 @@ export async function runResumableAnalyze({ listPayload, preparePayload, onCount
 }
 
 export function CopyProgress({ progress }) {
-  const { phase, issued, total, done, pending, failed } = progress
-  const pct = total ? Math.round(((phase === 'issuing' ? issued : done) / total) * 100) : 0
+  const { phase, issued, total, done, pending, failed, totalBytes, doneBytes } = progress
+  const pct = totalBytes ? Math.min(100, Math.round((doneBytes || 0) / totalBytes * 100)) : total ? Math.round(((phase === 'issuing' ? issued : done) / total) * 100) : 0
   return (
     <div className="up-migrate-progress">
       <div className="up-progress" style={{ width: '100%' }}><div className="up-progress-bar" style={{ width: `${pct}%` }} /></div>
@@ -166,7 +187,8 @@ export function CopyProgress({ progress }) {
 // Orquestación compartida por subida manual y cargas guardadas.
 export async function analyzeProjectRemote(config, { onCount, onEvent = () => {} } = {}) {
   const { source, recursive, projectCode, projectName, prefijo, subfolder } = config
-  const listPayload = { source, recursive }
+  const listPayload = { source, recursive, ...config._listPayload }
+  if (config._listPayload) return runResumableAnalyze({ listPayload, preparePayload: { destination: 'project', projectCode, projectName, prefijo, subfolder }, onCount, onEvent })
   onEvent('Resolviendo enlace…')
   if (source === 'sharepoint') {
     const resolved = await api.resolveSharepointUrl(config.sharepointUrl.trim())
@@ -192,4 +214,35 @@ export async function migrateProjectRemote(config, plan, { onProgress, onEvent =
     catch (e) { onEvent(`No se pudo refrescar el índice: ${e.message}`, true) }
   }
   return result
+}
+
+// Descubre solo el primer nivel; cada tanda se analiza justo antes de copiarla.
+export async function projectRemoteBatches(config, onEvent = () => {}) {
+  if (!config.splitBySubfolder) return [{ config, name: config.name }]
+  let base = { source: config.source, recursive: false, firstLevel: true }
+  if (config.source === 'sharepoint') {
+    const resolved = await api.resolveSharepointUrl(config.sharepointUrl.trim())
+    if (!resolved.site_id) throw new Error('No se pudo resolver el sitio de SharePoint')
+    base = { ...base, siteId: resolved.site_id, sourceFolder: resolved.folder_path }
+  } else base = { ...base, userEmail: config.userEmail.trim(), sourceFolder: config.folderPath.trim() || '/' }
+  let cursor, entries = [], failures = 0
+  while (true) {
+    let res
+    try { res = await api.postRemoteList({ ...base, ...(cursor ? { cursor } : {}) }) }
+    catch (e) { if (++failures >= 5) throw e; await new Promise(r => setTimeout(r, 10000)); continue }
+    entries.push(...(res.files || []))
+    onEvent(`Primer nivel: ${entries.filter(f => f.folder).length} subcarpetas`)
+    if (res.done) break
+    cursor = res.cursor
+    if (!(res.files || []).length) {
+      if (++failures >= 20) throw new Error('El listado no avanza; vuelve a analizar.')
+      await new Promise(r => setTimeout(r, 10000))
+    } else failures = 0
+  }
+  const batches = entries.filter(f => f.folder).map(f => ({ name: f.name,
+    config: { ...config, _listPayload: { ...base, firstLevel: false, recursive: config.recursive,
+      cursor: { pending: [[f.childrenUrl, f.relDir]] } } } }))
+  if (entries.some(f => !f.folder)) batches.unshift({ name: 'Archivos de la raíz',
+    config: { ...config, _listPayload: { ...base, firstLevel: false, recursive: false } } })
+  return batches
 }

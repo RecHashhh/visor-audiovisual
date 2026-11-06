@@ -211,6 +211,7 @@ export const api = {
   postUploadLocalPlan: (payload) => apiFetch('/api/upload/local/plan', { method: 'POST', body: JSON.stringify(payload) }),
   postRemotePlan:   (payload)    => apiFetch('/api/upload/remote/plan', { method: 'POST', body: JSON.stringify(payload) }),
   postRemoteBatch:  (payload)    => apiFetch('/api/upload/remote/batch', { method: 'POST', body: JSON.stringify(payload) }),
+  postRemoteBlockCopy: payload => apiFetch('/api/upload/remote/block-copy', { method: 'POST', body: JSON.stringify(payload) }),
   // Biblioteca (media) desde SharePoint/OneDrive: conserva nombres y estructura.
   postRemoteMediaPlan:  (payload) => apiFetch('/api/upload/remote/media/plan', { method: 'POST', body: JSON.stringify(payload) }),
   postRemoteMediaBatch: (payload) => apiFetch('/api/upload/remote/media/batch', { method: 'POST', body: JSON.stringify(payload) }),

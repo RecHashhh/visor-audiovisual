@@ -55,6 +55,9 @@ def validate_preset(body):
     result["recursive"] = body.get("recursive", True)
     if not isinstance(result["recursive"], bool):
         raise ValueError("Recursivo debe ser booleano")
+    result["splitBySubfolder"] = body.get("splitBySubfolder", not body.get("id"))
+    if not isinstance(result["splitBySubfolder"], bool):
+        raise ValueError("Dividir por subcarpetas debe ser booleano")
     if result["source"] == "sharepoint":
         value = body.get("sharepointUrl", "")
         if not isinstance(value, str) or len(value) > 8000:
@@ -98,6 +101,8 @@ class Presets:
             item = dict(clean, id=new_id, createdBy=old["createdBy"] if old else email, updatedAt=stamp)
             if old and "lastRun" in old:
                 item["lastRun"] = old["lastRun"]
+            if old and "lastAnalysis" in old:
+                item["lastAnalysis"] = old["lastAnalysis"]
             return [item if r["id"] == new_id else r for r in rows] if old else rows + [item]
         rows = self.update(self.key, change)
         return next(r for r in rows if r["id"] == new_id)
@@ -115,17 +120,24 @@ class Presets:
         if not isinstance(body, dict):
             raise ValueError("Resultado inválido")
         result = {"at": now(), "by": email}
-        for key in ("nuevos", "existentes", "subidos", "errores", "duracionS"):
+        analysis = body.get("kind") == "analysis"
+        if body.get("kind") not in (None, "run", "analysis"):
+            raise ValueError("Tipo de resultado inválido")
+        keys = ("total", "nuevos", "existentes", "bytesNuevos", "maxFileBytes") if analysis else ("nuevos", "existentes", "subidos", "errores", "duracionS")
+        for key in keys:
             value = body.get(key)
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value < 0 or (key != "duracionS" and not isinstance(value, int)):
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or value > 2 ** 53 - 1 or not math.isfinite(value) or (key != "duracionS" and not isinstance(value, int)):
                 raise ValueError(f"Resultado inválido: {key}")
             result[key] = value
+        if analysis and result["nuevos"] + result["existentes"] > result["total"]:
+            raise ValueError("Totales de análisis incoherentes")
         def change(data):
             rows = deepcopy(data if data is not None else seed_presets())
             item = next((r for r in rows if r["id"] == pid), None)
             if item is None:
                 raise KeyError("Carga no encontrada")
-            item.update(lastRun=result, updatedAt=result["at"])
+            item["lastAnalysis" if analysis else "lastRun"] = result
+            item["updatedAt"] = result["at"]
             return rows
         self.update(self.key, change)
         return result

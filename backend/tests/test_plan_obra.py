@@ -159,7 +159,7 @@ class PlanObraTests(unittest.TestCase):
             uploader._upload_file_in_blocks(container, "destino.jpg", str(path), "image/jpeg", metadata=meta)
         committed = container.get_blob_client.return_value.commit_block_list.call_args.kwargs
         self.assertEqual(committed["metadata"], meta)
-        self.assertEqual(committed["etag"], "*")
+        self.assertNotIn("etag", committed)
 
     def test_streaming_por_url_planifica_semana_y_continua_secuencia(self):
         indice = indice_vacio()
