@@ -28,6 +28,8 @@ from azure.core.exceptions import ResourceNotFoundError, ResourceExistsError
 import jwt
 from jwt import PyJWKClient
 import uploader
+from favorites_store import Favorites, origin as favorite_origin
+from azure.core import MatchConditions
 
 app = func.FunctionApp(http_auth_level=func.AuthLevel.ANONYMOUS)
 
@@ -400,6 +402,23 @@ def save_json_blob(blob_name: str, payload: Any) -> None:
         overwrite=True,
         content_type="application/json"
     )
+
+def load_json_blob_etag(blob_name):
+    bc = get_blob_service().get_blob_client(container=CONTAINER, blob=blob_name)
+    try:
+        download = bc.download_blob()
+        return json.loads(download.readall().decode("utf-8")), download.properties.etag
+    except ResourceNotFoundError:
+        return None, None
+
+
+def save_json_blob_etag(blob_name, payload, etag):
+    bc = get_blob_service().get_blob_client(container=CONTAINER, blob=blob_name)
+    bc.upload_blob(json.dumps(payload, ensure_ascii=False, default=str), overwrite=True,
+                   etag=etag if etag is not None else "*",
+                   match_condition=MatchConditions.IfNotModified if etag is not None else MatchConditions.IfMissing,
+                   content_type="application/json")
+
 
 def clear_index_related_cache() -> None:
     with _cache_lock:
@@ -2472,6 +2491,15 @@ def _safe_user_key(email: str) -> str:
 def _favorites_blob_name(email: str) -> str:
     return f"{CONFIG_PREFIX.strip('/')}/favorites/{_safe_user_key(email)}.json"
 
+def _favorites_store():
+    return Favorites(load_json_blob_etag, save_json_blob_etag, CONFIG_PREFIX, _favorites_blob_name)
+
+
+def _fav_error(exc):
+    status = 403 if isinstance(exc, PermissionError) else 404 if isinstance(exc, LookupError) else 400 if isinstance(exc, ValueError) else 409 if getattr(exc, "status_code", None) in (409, 412) else 500
+    return err(str(exc), status)
+
+
 def _load_favorites(email: str) -> dict:
     data = load_json_blob(_favorites_blob_name(email))
     cols = data.get("collections") if isinstance(data, dict) else None
@@ -2502,9 +2530,10 @@ def _sanitize_fav_item(raw: Any) -> Optional[dict]:
     return {
         "path": path,
         "name": str(raw.get("name") or path.split("/")[-1])[:200],
-        "projectCode": str(raw.get("projectCode") or "")[:80],
+        "projectCode": favorite_origin(path)[0],
         "projectName": str(raw.get("projectName") or "")[:160],
-        "week": str(raw.get("week") or "")[:40],
+        "week": favorite_origin(path)[1],
+        "folder": favorite_origin(path)[1],
     }
 
 
@@ -2516,11 +2545,11 @@ def favorites_get(req: func.HttpRequest) -> func.HttpResponse:
     if auth_err:
         return auth_err
     try:
-        fav = _load_favorites(_fav_caller_email(req))
+        fav = _favorites_store().get(_fav_caller_email(req))
         return ok({"collections": fav["collections"], "paths": _fav_all_paths(fav)})
     except Exception as exc:
         logging.error("favorites_get: %s", exc)
-        return err(str(exc), 500)
+        return _fav_error(exc)
 
 
 @app.route(route="favorites/collection", methods=["POST", "OPTIONS"])
@@ -2536,17 +2565,13 @@ def favorites_collection_create(req: func.HttpRequest) -> func.HttpResponse:
         if not name:
             return err("El nombre de la colección es requerido")
         email = _fav_caller_email(req)
-        fav = _load_favorites(email)
-        if len(fav["collections"]) >= 200:
-            return err("Máximo 200 colecciones")
         col = {"id": uuid.uuid4().hex[:10], "name": name,
                "items": [], "createdAt": datetime.now(timezone.utc).isoformat()}
-        fav["collections"].append(col)
-        _save_favorites(email, fav)
+        _favorites_store().create(email, col)
         return ok({"collection": col})
     except Exception as exc:
         logging.error("favorites_collection_create: %s", exc)
-        return err(str(exc), 500)
+        return _fav_error(exc)
 
 
 @app.route(route="favorites/collection/{cid}", methods=["POST", "DELETE", "OPTIONS"])
@@ -2559,24 +2584,18 @@ def favorites_collection_edit(req: func.HttpRequest) -> func.HttpResponse:
     cid = req.route_params.get("cid", "")
     try:
         email = _fav_caller_email(req)
-        fav = _load_favorites(email)
-        col = next((c for c in fav["collections"] if c.get("id") == cid), None)
-        if not col:
-            return err("Colección no encontrada", 404)
+        store = _favorites_store()
         if req.method == "DELETE":
-            fav["collections"] = [c for c in fav["collections"] if c.get("id") != cid]
-            _save_favorites(email, fav)
+            store.mutate(email, cid, lambda c: c.update(deleted=True), owner=True, metadata=True)
             return ok({"deleted": True})
-        body = req.get_json()
-        name = str(body.get("name") or "").strip()[:120]
+        name = str(req.get_json().get("name") or "").strip()[:120]
         if not name:
             return err("El nombre es requerido")
-        col["name"] = name
-        _save_favorites(email, fav)
+        col = store.mutate(email, cid, lambda c: c.update(name=name), owner=True, metadata=True)
         return ok({"collection": col})
     except Exception as exc:
         logging.error("favorites_collection_edit: %s", exc)
-        return err(str(exc), 500)
+        return _fav_error(exc)
 
 
 @app.route(route="favorites/item", methods=["POST", "OPTIONS"])
@@ -2593,6 +2612,12 @@ def favorites_item(req: func.HttpRequest) -> func.HttpResponse:
     if not path:
         return err("path es requerido")
 
+    _, auth_err = require_perms(req, section="proyectos")
+    if auth_err:
+        return auth_err
+    if path.startswith((CONFIG_PREFIX.strip('/') + '/', MEDIA_PREFIX.strip('/') + '/')):
+        return err("Solo hay favoritos en Obra", 403)
+
     # Solo puedes marcar/gestionar favoritos de archivos que tienes permiso de ver.
     _, auth_err = require_blob_access(req, path)
     if auth_err:
@@ -2600,30 +2625,39 @@ def favorites_item(req: func.HttpRequest) -> func.HttpResponse:
 
     try:
         email = _fav_caller_email(req)
-        fav = _load_favorites(email)
-
-        if action == "remove":
-            targets = [c for c in fav["collections"] if (not cid or c.get("id") == cid)]
-            for c in targets:
-                c["items"] = [it for it in c.get("items", []) if it.get("path") != path]
-            _save_favorites(email, fav)
-            return ok({"collections": fav["collections"], "paths": _fav_all_paths(fav)})
-
-        # add
+        if action not in ("add", "remove") or (action == "add" and not cid):
+            return err("Acción o colección inválida")
         item = _sanitize_fav_item(body)
-        if not item:
-            return err("item inválido")
-        col = next((c for c in fav["collections"] if c.get("id") == cid), None)
-        if not col:
-            return err("Colección no encontrada", 404)
-        if not any(it.get("path") == path for it in col.get("items", [])):
-            item["addedAt"] = datetime.now(timezone.utc).isoformat()
-            col.setdefault("items", []).append(item)
-        _save_favorites(email, fav)
-        return ok({"collections": fav["collections"], "paths": _fav_all_paths(fav)})
+        return ok(_favorites_store().item(email, cid, item, remove=action == "remove"))
     except Exception as exc:
         logging.error("favorites_item: %s", exc)
-        return err(str(exc), 500)
+        return _fav_error(exc)
+
+
+@app.route(route="favorites/collection/{cid}/members", methods=["POST", "OPTIONS"])
+def favorites_collection_members(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    _, auth_err = require_perms(req, section="proyectos")
+    if auth_err:
+        return auth_err
+    try:
+        return ok(_favorites_store().set_members(_fav_caller_email(req), req.route_params.get("cid", ""), req.get_json().get("members")))
+    except Exception as exc:
+        return _fav_error(exc)
+
+
+@app.route(route="favorites/collection/{cid}/leave", methods=["POST", "OPTIONS"])
+def favorites_collection_leave(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    _, auth_err = require_perms(req, section="proyectos")
+    if auth_err:
+        return auth_err
+    try:
+        return ok(_favorites_store().leave(_fav_caller_email(req), req.route_params.get("cid", "")))
+    except Exception as exc:
+        return _fav_error(exc)
 
 
 @app.route(route="favorites/collection/{cid}/share", methods=["POST", "OPTIONS"])
@@ -2640,10 +2674,12 @@ def favorites_collection_share(req: func.HttpRequest) -> func.HttpResponse:
         body = {}
     try:
         email = _fav_caller_email(req)
-        fav = _load_favorites(email)
+        fav = _favorites_store().get(email)
         col = next((c for c in fav["collections"] if c.get("id") == cid), None)
         if not col:
             return err("Colección no encontrada", 404)
+        if col.get("shared") and col.get("role") != "owner":
+            return err("Solo el dueño puede generar el enlace público", 403)
         paths = [it.get("path") for it in col.get("items", []) if it.get("path")]
         if not paths:
             return err("La colección está vacía")
@@ -2657,12 +2693,11 @@ def favorites_collection_share(req: func.HttpRequest) -> func.HttpResponse:
             "files": paths[:2000], "expiresAt": expires_at.isoformat(), "active": True,
         }
         save_share(share_data)
-        col["shareToken"] = token
-        _save_favorites(email, fav)
+        _favorites_store().mutate(email, cid, lambda c: c.update(shareToken=token), owner=True)
         return ok({"token": token, "shareUrl": f"{origin}/share/{token}", "expiresAt": expires_at.isoformat()})
     except Exception as exc:
         logging.error("favorites_collection_share: %s", exc)
-        return err(str(exc), 500)
+        return _fav_error(exc)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

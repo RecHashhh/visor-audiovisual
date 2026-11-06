@@ -1367,6 +1367,8 @@ label.btn-sm { display: inline-flex; align-items: center; }
   transition: opacity var(--transition);
 }
 .gallery-item:hover .gallery-item-label { opacity: 1; }
+.fav-detail .gallery-item-label { opacity: 1; font-size: .65rem; }
+.fav-detail .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .gallery-item-type {
   position: absolute;
   top: 6px; left: 6px;
