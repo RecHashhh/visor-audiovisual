@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams, useNavigate } from 'react-router-dom'
 import GalleryPage from './GalleryPage'
+import { weekLabel } from '../utils/weekLabel'
 import { api } from '../utils/api'
 import { fetchThumb } from '../utils/thumbs'
 import { useFavorites } from '../utils/favorites'
 import { useDownloads } from '../utils/downloads'
 import Modal from '../components/Modal'
+import Help from '../components/Help'
 
 const IMG_EXTS = ['jpg', 'jpeg', 'png', 'tiff', 'tif', 'webp', 'gif']
 const isImg = (n) => IMG_EXTS.includes((n.split('.').pop() || '').toLowerCase())
@@ -56,7 +58,7 @@ export default function FavoritesPage() {
     const code = item.projectCode || item.path.split('/')[0]
     const project = projects.find(p => p.code === code)
     const week = item.week || item.path.split('/').slice(1, -1).join('/')
-    return `${code} · ${project?.name || item.projectName || code} · ${week || 'Sin semana'}`
+    return `${project?.name || item.projectName || code} · ${weekLabel(week) || 'Sin semana'}`
   }
   const [share, setShare] = useState(null)           // { cid, days, url, loading, error }
   const [copied, setCopied] = useState(false)
@@ -153,7 +155,7 @@ export default function FavoritesPage() {
     <>
       <div className="page-header brand-page-header">
         <div>
-          <h1 className="page-title">⭐ Favoritos <span title="Guarda fotos y videos desde el corazón de la galería. Las personas invitadas pueden editar la colección." aria-label="Ayuda de favoritos">?</span></h1>
+          <h1 className="page-title">⭐ Favoritos <Help text="Guarda fotos y videos desde el corazón de la galería. Las personas invitadas pueden editar la colección." /></h1>
         </div>
       </div>
 
@@ -236,7 +238,7 @@ export default function FavoritesPage() {
       <Modal open={!!people} onClose={() => !busy && setPeople(null)} title="Compartir con personas"
         footer={<><button className="btn btn-ghost" disabled={busy} onClick={() => setPeople(null)}>Cancelar</button>
           <button className="btn btn-primary" disabled={busy} onClick={savePeople}>Guardar</button></>}>
-        <span title="Los miembros pueden agregar, quitar y descargar archivos. Solo el dueño administra la colección. Máximo 50 correos." aria-label="Permisos de miembros">?</span>
+        <Help text="Los miembros pueden agregar, quitar y descargar archivos. Solo el dueño administra la colección. Máximo 50 correos." />
         {people?.members.map(member => <div className="fav-col-bar" key={member}><span>{member}</span>
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setPeople(p => ({ ...p, members: p.members.filter(m => m !== member) }))}>Quitar</button></div>)}
         <form onSubmit={e => { e.preventDefault(); savePeople() }}>

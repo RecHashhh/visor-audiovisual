@@ -57,6 +57,15 @@
   font-display: swap;
 }
 
+/* Ayuda «?» uniforme (componente Help) */
+.help-dot {
+  display: inline-grid; place-items: center; flex: none; width: 16px; height: 16px; margin-left: 6px;
+  border: 1px solid var(--border-hi, var(--border)); border-radius: 50%; vertical-align: middle;
+  font-size: 10px; font-weight: 600; line-height: 1; color: var(--text-dim); background: var(--bg2);
+  cursor: help; user-select: none; position: relative; top: -1px;
+}
+.help-dot:hover, .help-dot:focus-visible { color: var(--accent); border-color: var(--accent); outline: none; }
+
 /* Cargas guardadas: lista en el panel izquierdo, detalle en el derecho */
 .preset-left-actions { display: flex; gap: 6px; padding: 0 12px 8px; }
 .preset-left-actions > button { flex: 1; font-size: 12px; padding: 6px 8px; }
@@ -1410,6 +1419,28 @@ label.btn-sm { display: inline-flex; align-items: center; }
 .lightbox-toolbar .btn {
   flex-shrink: 0;
 }
+/* Barra del visor: nombre y origen a la izquierda, acciones a la derecha,
+   etiquetas en su propia fila. Todo pensado para el escenario oscuro. */
+.lbx-bar { flex-wrap: wrap; gap: 8px 14px; padding: 10px 12px; max-width: min(70vw, 820px); }
+.lbx-info { flex: 1 1 220px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.lbx-name { font-size: 0.85rem; font-weight: 600; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbx-origin { font-size: 0.76rem; color: rgba(255,255,255,0.7); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lbx-origin:empty { display: none; }
+.lbx-actions { display: flex; gap: 8px; flex: none; }
+.lbx-actions .btn { color: #fff; border-color: rgba(255,255,255,0.35); }
+.lbx-actions .btn:hover { border-color: #fff; background: rgba(255,255,255,0.08); }
+.lbx-tags { flex-basis: 100%; padding-top: 8px; border-top: 1px solid rgba(255,255,255,0.12); }
+.tag-chips-dark { padding: 0; gap: 6px; }
+.tag-pill {
+  display: inline-flex; align-items: center; gap: 4px; padding: 3px 10px; border-radius: 99px;
+  font: inherit; font-size: 0.74rem; font-weight: 500; line-height: 1.4; cursor: pointer;
+  background: transparent; color: rgba(255,255,255,0.78); border: 1px solid rgba(255,255,255,0.28);
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+.tag-pill:hover:not(:disabled) { border-color: rgba(255,255,255,0.6); color: #fff; }
+.tag-pill.is-on { background: var(--tag-color); border-color: var(--tag-color); color: #fff; font-weight: 600; }
+.tag-pill:disabled { opacity: 0.6; cursor: progress; }
+span.tag-pill { cursor: default; }
 .lightbox-close {
   position: absolute;
   top: 20px; right: 24px;

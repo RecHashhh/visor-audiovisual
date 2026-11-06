@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api } from '../utils/api'
 import { useAuthz } from '../utils/authz'
 import { useSections } from '../utils/sections'
+import Help from '../components/Help'
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
@@ -182,7 +183,7 @@ export default function AccessPage() {
       )}
 
       {me?.caps?.manageAccess && <section className="access-card">
-        <div className="access-card-title">Equipo TI <span title="Permisos de operador, eliminar, renombrar, etiquetar y revisar. Ve todo, también en modo restringido. Los permisos individuales se suman.">?</span></div>
+        <div className="access-card-title">Equipo TI <Help text="Permisos de operador, eliminar, renombrar, etiquetar y revisar. Ve todo, también en modo restringido. Los permisos individuales se suman." /></div>
         <div className="access-add">
           <input className="search-input" type="email" placeholder="correo@ripconciv.com" aria-label="Correo para Equipo TI"
             value={tiEmail} onChange={e => setTiEmail(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTiMember()} />
@@ -354,7 +355,7 @@ function UserRow({ user: u, isSelf, sections, sectionItems, onPatch, onSetRole, 
               {CAP_META.map(c => (
                 <label key={c.key} className="access-cap">
                   <input type="checkbox" checked={Boolean(u.caps[c.key])} onChange={() => onToggleCap(c.key)} />
-                  <span>{c.label} <span title={c.help}>?</span></span>
+                  <span>{c.label} <Help text={c.help} /></span>
                 </label>
               ))}
             </div>

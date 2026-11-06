@@ -8,6 +8,8 @@ import { fetchThumb } from '../utils/thumbs'
 import GalleryPage from './GalleryPage'
 import Modal from '../components/Modal'
 import ObraTabs from '../components/ObraTabs'
+import { weekLabel } from '../utils/weekLabel'
+import Help from '../components/Help'
 
 const COLORS = [['blue', 'Azul'], ['accent', 'Acento'], ['orange', 'Naranja'], ['red', 'Rojo'], ['dim', 'Gris']]
 const plural = (n, one, many) => `${n.toLocaleString('es-EC')} ${n === 1 ? one : many}`
@@ -40,7 +42,7 @@ export default function TagsPage() {
 
   const current = catalog.find(t => t.id === id)
   const projectName = code => projects.find(p => p.code === code)?.name || code
-  const originLabel = item => `${projectName(item.projectCode)} · ${item.week}`
+  const originLabel = item => `${projectName(item.projectCode)} · ${weekLabel(item.week)}`
 
   if (id) return <>
     <div className="breadcrumb">
@@ -61,7 +63,7 @@ export default function TagsPage() {
     <div className="page-header tagx-head">
       <div>
         <h1 className="page-title">Etiquetas</h1>
-        <p className="page-sub">Material de obra clasificado por el Equipo TI <span className="tag-help" title="Etiqueta fotos y videos desde la galería de cada semana: selecciona y usa «Etiquetar», o activa las etiquetas en el visor.">?</span></p>
+        <p className="page-sub">Material de obra clasificado por el Equipo TI <Help text="Etiqueta fotos y videos desde la galería de cada semana: selecciona y usa «Etiquetar», o activa las etiquetas en el visor." /></p>
       </div>
       <div className="tagx-actions">
         <ObraTabs active="tags" />

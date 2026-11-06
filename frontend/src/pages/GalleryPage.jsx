@@ -10,6 +10,7 @@ import SmartVideo from '../components/SmartVideo'
 import { useAuthz } from '../utils/authz'
 import { DeleteProjectDialog } from '../components/ProjectTools'
 import { TagChips, TagDialog } from '../components/MediaTags'
+import { weekLabel } from '../utils/weekLabel'
 
 // Corazón (relleno = ya es favorito)
 function HeartIcon({ filled }) {
@@ -363,7 +364,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
       setTagDialog(null)
     } catch (e) { setTagError(e.message) } finally { setTagBusy(false) }
   }
-  const fileTags = file => <TagChips catalog={tagCatalog} ids={tagAssignments[file.path] || []}
+  const fileTags = (file, dark = false) => <TagChips catalog={tagCatalog} ids={tagAssignments[file.path] || []} dark={dark}
     editable={!!me?.caps?.tagMedia && tagsReady} busy={tagBusy}
     onToggle={tag => applyTags([file.path], (tagAssignments[file.path] || []).includes(tag) ? [] : [tag], (tagAssignments[file.path] || []).includes(tag) ? [tag] : [])} />
   const folders = browse.folders || []
@@ -655,7 +656,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                 </div>
 
                 <div className="lightbox-meta-panel gallery-preview-meta">
-                  <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(viewer.file?.size)}</strong></div>
+                  {viewer.file?.size != null && <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(viewer.file?.size)}</strong></div>}
                   <div className="meta-row">
                     <span>Resolución:</span>
                     <strong>
@@ -669,7 +670,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                   <div className="meta-row"><span>Orientación:</span><strong>{orientationOf(viewer.width, viewer.height)}</strong></div>
                   <div className="meta-row"><span>Proporción:</span><strong>{aspectRatioOf(viewer.width, viewer.height)}</strong></div>
                   <div className="meta-row"><span>Tipo:</span><strong>{extOf(viewer.file?.name || '').toUpperCase() || 'N/A'}</strong></div>
-                  <div className="meta-row"><span>Modificado:</span><strong>{formatDate(viewer.file?.lastModified)}</strong></div>
+                  {viewer.file?.lastModified && <div className="meta-row"><span>Modificado:</span><strong>{formatDate(viewer.file?.lastModified)}</strong></div>}
                 </div>
               </div>
             </aside>
@@ -698,16 +699,22 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
               {fullscreenViewer.unsupported && <span>Descarga el video para reproducirlo.</span>}
 
               <div className="lightbox-bottom-row">
-                <div className="lightbox-toolbar">
-                  <span className="lightbox-name">{fullscreenViewer.file?.name || 'Sin nombre'}</span>
-                  {collection && <span>{originLabel?.(fullscreenViewer.file)}</span>}
-                  {fullscreenViewer.file && fileTags(fullscreenViewer.file)}
-                  {collection && <Link className="btn btn-ghost btn-sm" to={originUrl(fullscreenViewer.file)}>Ir al origen</Link>}
-                  <button className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>Descargar</button>
+                <div className="lightbox-toolbar lbx-bar">
+                  <div className="lbx-info">
+                    <span className="lbx-name" title={fullscreenViewer.file?.name}>{fullscreenViewer.file?.name || 'Sin nombre'}</span>
+                    <span className="lbx-origin">{collection ? originLabel?.(fullscreenViewer.file) : weekLabel(week || '')}</span>
+                  </div>
+                  <div className="lbx-actions">
+                    {collection && <Link className="btn btn-ghost btn-sm" to={originUrl(fullscreenViewer.file)}>Ir al origen</Link>}
+                    <button className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>Descargar</button>
+                  </div>
+                  {fullscreenViewer.file && me?.caps?.tagMedia && tagCatalog.length > 0 && (
+                    <div className="lbx-tags">{fileTags(fullscreenViewer.file, true)}</div>
+                  )}
                 </div>
 
                 <div className="lightbox-meta-panel">
-                  <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(fullscreenViewer.file?.size)}</strong></div>
+                  {fullscreenViewer.file?.size != null && <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(fullscreenViewer.file?.size)}</strong></div>}
                   <div className="meta-row">
                     <span>Resolución:</span>
                     <strong>
@@ -719,7 +726,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                   <div className="meta-row"><span>Orientación:</span><strong>{orientationOf(fullscreenViewer.width, fullscreenViewer.height)}</strong></div>
                   <div className="meta-row"><span>Proporción:</span><strong>{aspectRatioOf(fullscreenViewer.width, fullscreenViewer.height)}</strong></div>
                   <div className="meta-row"><span>Tipo:</span><strong>{extOf(fullscreenViewer.file?.name || '').toUpperCase() || 'N/A'}</strong></div>
-                  <div className="meta-row"><span>Modificado:</span><strong>{formatDate(fullscreenViewer.file?.lastModified)}</strong></div>
+                  {fullscreenViewer.file?.lastModified && <div className="meta-row"><span>Modificado:</span><strong>{formatDate(fullscreenViewer.file?.lastModified)}</strong></div>}
                 </div>
               </div>
             </div>

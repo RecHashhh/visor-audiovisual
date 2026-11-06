@@ -2,6 +2,7 @@ import { useState } from 'react'
 import Modal from './Modal'
 import { api } from '../utils/api'
 import { useAuthz } from '../utils/authz'
+import Help from './Help'
 
 export function ProjectTotals({ project }) {
   const text = [['photoCount', 'fotos'], ['videoCount', 'videos']]
@@ -36,7 +37,7 @@ export function RenameProject({ project, onSaved }) {
     <Modal open={open} onClose={() => !busy && setOpen(false)} title="Renombrar proyecto"
       footer={<><button className="btn btn-ghost" disabled={busy} onClick={() => setOpen(false)}>Cancelar</button>
         <button className="btn btn-primary" disabled={busy || (name.trim().length > 0 && name.trim().length < 3)} onClick={save}>{busy ? 'Guardando…' : 'Guardar'}</button></>}>
-      <label className="field-label" htmlFor={`project-name-${project.code}`}>Nombre <span title="Vacío: volver al nombre automático. Entre 3 y 120 caracteres.">?</span></label>
+      <label className="field-label" htmlFor={`project-name-${project.code}`}>Nombre <Help text="Vacío: volver al nombre automático. Entre 3 y 120 caracteres." /></label>
       <input id={`project-name-${project.code}`} className="field-input" autoFocus maxLength={120} value={name} disabled={busy} onChange={e => setName(e.target.value)} />
       {error && <p className="alert alert-error" role="alert">{error}</p>}
     </Modal>

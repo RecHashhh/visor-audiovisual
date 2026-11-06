@@ -1,8 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import Modal from './Modal'
+import Help from './Help'
 
-export function TagChips({ catalog, ids = [], editable, busy, onToggle }) {
-  return <div className="tag-chips">{catalog.filter(t => editable || ids.includes(t.id)).map(t => (
+// dark: interruptores para el visor oscuro (activa = color sólido con ✓).
+export function TagChips({ catalog, ids = [], editable, busy, onToggle, dark = false }) {
+  const shown = catalog.filter(t => editable || ids.includes(t.id))
+  if (!shown.length) return null
+  if (dark) return <div className="tag-chips tag-chips-dark" role="group" aria-label="Etiquetas">{shown.map(t => {
+    const on = ids.includes(t.id)
+    return editable
+      ? <button key={t.id} type="button" className={`tag-pill tag-color-${t.color} ${on ? 'is-on' : ''}`} aria-pressed={on}
+          disabled={busy} onClick={() => onToggle(t.id)}>{on && <span aria-hidden="true">✓</span>}{t.label}</button>
+      : <span key={t.id} className={`tag-pill is-on tag-color-${t.color}`}>{t.label}</span>
+  })}</div>
+  return <div className="tag-chips">{shown.map(t => (
     editable ? <button key={t.id} className={`tag-chip badge badge-${t.color} ${ids.includes(t.id) ? 'tag-active' : 'tag-inactive'}`}
       aria-pressed={ids.includes(t.id)} disabled={busy} onClick={() => onToggle(t.id)}>{t.label}</button>
       : <span key={t.id} className={`tag-chip badge badge-${t.color}`}>{t.label}</span>
@@ -31,6 +42,6 @@ export function TagDialog({ paths, catalog, assignments, busy, error, onClose, o
     <div className="tag-checks">{catalog.map(t => <TagCheck key={t.id} tag={t} disabled={busy}
       value={t.id in changes ? changes[t.id] : initial(t.id)}
       onChange={() => setChanges(c => ({ ...c, [t.id]: !(t.id in c ? c[t.id] : initial(t.id) === true) }))} />)}</div>
-    <span className="tag-help" title="La casilla parcial indica que solo algunos archivos tienen la etiqueta. Solo se aplican las casillas que cambies.">?</span>
+    <Help text="La casilla parcial indica que solo algunos archivos tienen la etiqueta. Solo se aplican las casillas que cambies." />
   </Modal>
 }

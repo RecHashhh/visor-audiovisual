@@ -6,6 +6,7 @@ import { useEffect, useRef, useState } from 'react'
 import { api } from '../utils/api'
 import { analyzeProjectRemote, migrateProjectRemote, projectRemoteBatches, formatGB, useUploadLog, UploadLog, logPlan, CopyProgress } from '../utils/remoteUpload'
 import { workingHours, nextEvening, countdown, largeAnalysis, orderPresets } from '../utils/presetSchedule.mjs'
+import Help from './Help'
 
 const PREFIXES = ['FOT', 'DRN', 'VID', 'I360', 'E360']
 const empty = () => ({ name: '', source: 'sharepoint', sharepointUrl: '', userEmail: '', folderPath: '/', projectCode: '', projectName: '', prefijo: 'FOT', subfolder: '', recursive: true, splitBySubfolder: true })
@@ -252,9 +253,9 @@ export function PresetDetail({ ctx, projects, refreshIndex, setRefreshIndex, dis
         <input type="checkbox" checked={Boolean(p.splitBySubfolder)} disabled={blocked}
           onChange={e => ctx.save({ ...p, splitBySubfolder: e.target.checked })} />
         Dividir por subcarpetas
-        <span className="preset-help" title={p.lastAnalysis?.total > 3000 && !p.splitBySubfolder
+        <Help text={p.lastAnalysis?.total > 3000 && !p.splitBySubfolder
           ? 'Recomendado: el último análisis tuvo más de 3000 archivos. Procesa una subcarpeta a la vez.'
-          : 'Procesa cada subcarpeta del primer nivel y los archivos de la raíz en tandas separadas.'}>?</span>
+          : 'Procesa cada subcarpeta del primer nivel y los archivos de la raíz en tandas separadas.'} />
         {p.lastAnalysis?.total > 3000 && !p.splitBySubfolder && <span className="badge badge-orange">recomendado</span>}
       </label>
       <div className="up-pickers">
@@ -266,7 +267,7 @@ export function PresetDetail({ ctx, projects, refreshIndex, setRefreshIndex, dis
           <input type="checkbox" checked={refreshIndex} onChange={e => setRefreshIndex(e.target.checked)} />
           Refrescar índice
         </label>
-        <span className="preset-help" title="Analizar solo cuenta lo nuevo. Ejecutar analiza y copia lo nuevo; lo ya subido se omite. Deja esta pestaña abierta mientras corre: si se cierra, vuelve a Ejecutar y continúa.">?</span>
+        <Help text="Analizar solo cuenta lo nuevo. Ejecutar analiza y copia lo nuevo; lo ya subido se omite. Deja esta pestaña abierta mientras corre: si se cierra, vuelve a Ejecutar y continúa." />
       </div>
       {ctx.states[p.id] && <div className="uplog-status" role="status">{ctx.states[p.id]}</div>}
       {ctx.active === p.id && ctx.progress && <CopyProgress progress={ctx.progress} />}
@@ -278,11 +279,11 @@ export function PresetDetail({ ctx, projects, refreshIndex, setRefreshIndex, dis
         <button type="button" className="up-btn-primary" onClick={() => ctx.choose('schedule')}>Programar para las 18:00</button>
         <button type="button" className="up-btn-ghost" onClick={() => ctx.choose('now')}>Ejecutar ahora igualmente</button>
         <button type="button" className="up-btn-ghost" onClick={() => ctx.choose('cancel')}>Cancelar</button>
-        <span className="preset-help" title="Horario de Ecuador, de lunes a viernes. La programación espera en esta pestaña; debe permanecer abierta.">?</span>
+        <Help text="Horario de Ecuador, de lunes a viernes. La programación espera en esta pestaña; debe permanecer abierta." />
       </div>
     </div>}
     {ctx.scheduled > 0 && <div className="uplog-status" role="status">{ctx.countdown} <button type="button" className="up-btn-ghost" onClick={() => ctx.choose('cancel')}>Cancelar</button>
-      <span className="preset-help" title="Mantén esta pestaña abierta. El inicio puede retrasarse si el equipo se suspende.">?</span>
+      <Help text="Mantén esta pestaña abierta. El inicio puede retrasarse si el equipo se suspende." />
     </div>}
     <UploadLog lines={ctx.log.lines} />
   </div>
@@ -324,7 +325,7 @@ function PresetForm({ initial, projects, busy, error, onSave, onClose }) {
       <label>Prefijo<select value={form.prefijo} onChange={e => patch({ prefijo: e.target.value })}>{PREFIXES.map(p => <option key={p}>{p}</option>)}</select></label>
       {field('subfolder', 'Subcarpeta', { required: false })}
       <label className="preset-check"><input type="checkbox" checked={form.recursive} onChange={e => patch({ recursive: e.target.checked })} />Incluir subcarpetas</label>
-      <label className="preset-check"><input type="checkbox" checked={Boolean(form.splitBySubfolder)} onChange={e => patch({ splitBySubfolder: e.target.checked })} />Dividir por subcarpetas <span className="preset-help" title="Analiza y copia una subcarpeta a la vez; los archivos de la raíz forman otra tanda.">?</span></label>
+      <label className="preset-check"><input type="checkbox" checked={Boolean(form.splitBySubfolder)} onChange={e => patch({ splitBySubfolder: e.target.checked })} />Dividir por subcarpetas <Help text="Analiza y copia una subcarpeta a la vez; los archivos de la raíz forman otra tanda." /></label>
       {error && <div className="alert alert-error preset-test" role="alert">{error}</div>}
       <div className="up-pickers preset-test"><button type="submit" className="up-btn-primary">Guardar</button><button type="button" className="up-btn-ghost" onClick={onClose}>Cancelar</button></div>
     </fieldset>

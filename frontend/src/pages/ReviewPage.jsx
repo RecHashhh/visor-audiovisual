@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom'
 import { api } from '../utils/api'
 import { useAuthz } from '../utils/authz'
 import Modal from '../components/Modal'
+import Help from '../components/Help'
 
 const STATES = { pendiente: 'Pendiente', 'en-revision': 'En revisión', revisado: 'Revisado' }
 const DEFAULT_PEOPLE = ['pasanteti01', 'kalopez', 'pasanteti02']
@@ -103,7 +104,7 @@ export default function ReviewPage() {
   return <div className="rev-page">
     <div className="rev-heading">
       <h1 className="page-title">Revisión</h1>
-      <span className="rev-help" tabIndex={0} aria-label="Ayuda de revisión" title="Clasifica, depura y etiqueta el material. Marca el proyecto cuando hayas terminado.">?</span>
+      <Help text="Clasifica, depura y etiqueta el material. Marca el proyecto cuando hayas terminado." />
       <div className="rev-actions">
         <button className="btn btn-ghost" disabled={busy.length > 0} onClick={() => { setAddQuery(''); setDialog('add') }}>Agregar proyecto</button>
         <button className="btn btn-primary" disabled={busy.length > 0 || !unassigned} onClick={() => {
@@ -158,7 +159,7 @@ export default function ReviewPage() {
     <Modal open={dialog === 'assign'} onClose={() => { if (!bulk) setDialog('') }} title="Repartir" footer={
       <button className="btn btn-primary" disabled={bulk || !people.length} onClick={distribute}>{bulk ? 'Guardando…' : `Repartir ${unassigned} pendientes`}</button>}>
       {error && <div className="rev-error" role="alert">{error}</div>}
-      <div className="rev-dialog-label">Responsables <span className="rev-help" tabIndex={0} title="Reparte todos los pendientes sin responsable, en ronda, siguiendo el orden indicado.">?</span></div>
+      <div className="rev-dialog-label">Responsables <Help text="Reparte todos los pendientes sin responsable, en ronda, siguiendo el orden indicado." /></div>
       {data.assignees.map(email => <label className="rev-person" key={email}>
         <input type="checkbox" checked={people.includes(email)} disabled={bulk} onChange={e => setPeople(v => e.target.checked ? [...v, email] : v.filter(p => p !== email))} />
         <span>{shortName(email)}<small>{email}</small></span><small>{people.includes(email) ? people.indexOf(email) + 1 : ''}</small>
