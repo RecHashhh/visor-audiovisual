@@ -1,5 +1,6 @@
 // src/pages/GalleryPage.jsx
 import { useState, useEffect, useCallback, useRef } from 'react'
+import { createPortal } from 'react-dom'
 import { useParams, Link, useNavigate } from 'react-router-dom'
 import { api } from '../utils/api'
 import { fetchThumb } from '../utils/thumbs'
@@ -111,6 +112,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
   const [loadError, setLoadError] = useState(null)
   const [filter, setFilter] = useState('all')
   const [order, setOrder] = useState('date')
+  const [lbxPanel, setLbxPanel] = useState(null)   // null | 'details' | 'tags' (fila extra bajo la barra del visor)
   const [sizeFilter, setSizeFilter] = useState('all')
   const [viewer, setViewer] = useState(null)  // { idx, url, file, kind, width, height, metaLoading }
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -676,7 +678,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
             </aside>
           )}
 
-          {fullscreenViewer && (
+          {fullscreenViewer && createPortal(
             <div
               ref={lightboxRef}
               className="lightbox-overlay"
@@ -689,6 +691,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
               <button className="lightbox-nav prev" onClick={() => navViewer(-1)}>‹</button>
               <button className="lightbox-nav next" onClick={() => navViewer(1)}>›</button>
 
+              <div className="lbx-stage" onClick={e => e.target === e.currentTarget && (collection ? closeViewer() : setFullscreenViewer(null))}>
               {fullscreenViewer.urlLoading ? <div className="spinner" /> : fullscreenViewer.kind === 'vid' ? (
                 <SmartVideo key={fullscreenViewer.file.path} className="lightbox-img" src={fullscreenViewer.url}
                   onLoadedMetadata={e => onVideoMeta(fullscreenViewer.url, { width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
@@ -696,40 +699,44 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
               ) : fullscreenViewer.kind === 'img' && fullscreenViewer.url ? (
                 <img className="lightbox-img" src={fullscreenViewer.url} alt={fullscreenViewer.file?.name || 'preview'} />
               ) : <div className="lightbox-file-fallback">Vista previa no disponible</div>}
-              {fullscreenViewer.unsupported && <span>Descarga el video para reproducirlo.</span>}
+              {fullscreenViewer.unsupported && <span className="lbx-note">Descarga el video para reproducirlo.</span>}
+              </div>
 
-              <div className="lightbox-bottom-row">
-                <div className="lightbox-toolbar lbx-bar">
+              <div className="lbx-dock">
+                <div className="lbx-row">
                   <div className="lbx-info">
                     <span className="lbx-name" title={fullscreenViewer.file?.name}>{fullscreenViewer.file?.name || 'Sin nombre'}</span>
                     <span className="lbx-origin">{collection ? originLabel?.(fullscreenViewer.file) : weekLabel(week || '')}</span>
                   </div>
                   <div className="lbx-actions">
+                    <button type="button" className={`btn btn-ghost btn-sm ${lbxPanel === 'details' ? 'is-on' : ''}`} aria-expanded={lbxPanel === 'details'}
+                      onClick={() => setLbxPanel(p => (p === 'details' ? null : 'details'))}>Detalles</button>
+                    {fullscreenViewer.file && me?.caps?.tagMedia && tagCatalog.length > 0 && (
+                      <button type="button" className={`btn btn-ghost btn-sm ${lbxPanel === 'tags' ? 'is-on' : ''}`} aria-expanded={lbxPanel === 'tags'}
+                        onClick={() => setLbxPanel(p => (p === 'tags' ? null : 'tags'))}>
+                        Etiquetas{(tagAssignments[fullscreenViewer.file.path] || []).length ? ` (${(tagAssignments[fullscreenViewer.file.path] || []).length})` : ''}
+                      </button>
+                    )}
                     {collection && <Link className="btn btn-ghost btn-sm" to={originUrl(fullscreenViewer.file)}>Ir al origen</Link>}
-                    <button className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>Descargar</button>
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>Descargar</button>
                   </div>
-                  {fullscreenViewer.file && me?.caps?.tagMedia && tagCatalog.length > 0 && (
-                    <div className="lbx-tags">{fileTags(fullscreenViewer.file, true)}</div>
-                  )}
                 </div>
-
-                <div className="lightbox-meta-panel">
-                  {fullscreenViewer.file?.size != null && <div className="meta-row"><span>Tamaño:</span><strong>{formatBytes(fullscreenViewer.file?.size)}</strong></div>}
-                  <div className="meta-row">
-                    <span>Resolución:</span>
-                    <strong>
-                      {fullscreenViewer.metaLoading
-                        ? 'Calculando...'
-                        : (fullscreenViewer.width && fullscreenViewer.height ? `${fullscreenViewer.width} x ${fullscreenViewer.height} px` : 'No disponible')}
-                    </strong>
-                  </div>
-                  <div className="meta-row"><span>Orientación:</span><strong>{orientationOf(fullscreenViewer.width, fullscreenViewer.height)}</strong></div>
-                  <div className="meta-row"><span>Proporción:</span><strong>{aspectRatioOf(fullscreenViewer.width, fullscreenViewer.height)}</strong></div>
-                  <div className="meta-row"><span>Tipo:</span><strong>{extOf(fullscreenViewer.file?.name || '').toUpperCase() || 'N/A'}</strong></div>
-                  {fullscreenViewer.file?.lastModified && <div className="meta-row"><span>Modificado:</span><strong>{formatDate(fullscreenViewer.file?.lastModified)}</strong></div>}
-                </div>
+                {lbxPanel === 'tags' && fullscreenViewer.file && me?.caps?.tagMedia && (
+                  <div className="lbx-panel">{fileTags(fullscreenViewer.file, true)}</div>
+                )}
+                {lbxPanel === 'details' && (
+                  <dl className="lbx-panel lbx-details">
+                    {fullscreenViewer.file?.size != null && <><dt>Tamaño</dt><dd>{formatBytes(fullscreenViewer.file.size)}</dd></>}
+                    <dt>Resolución</dt><dd>{fullscreenViewer.metaLoading ? 'Calculando…' : (fullscreenViewer.width && fullscreenViewer.height ? `${fullscreenViewer.width} × ${fullscreenViewer.height} px` : '—')}</dd>
+                    {fullscreenViewer.width && fullscreenViewer.height && <><dt>Orientación</dt><dd>{orientationOf(fullscreenViewer.width, fullscreenViewer.height)}</dd>
+                      <dt>Proporción</dt><dd>{aspectRatioOf(fullscreenViewer.width, fullscreenViewer.height)}</dd></>}
+                    <dt>Tipo</dt><dd>{extOf(fullscreenViewer.file?.name || '').toUpperCase() || '—'}</dd>
+                    {fullscreenViewer.file?.lastModified && <><dt>Modificado</dt><dd>{formatDate(fullscreenViewer.file.lastModified)}</dd></>}
+                  </dl>
+                )}
               </div>
-            </div>
+            </div>,
+            document.body
           )}
         </div>
       )}

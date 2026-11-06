@@ -1419,6 +1419,21 @@ label.btn-sm { display: inline-flex; align-items: center; }
 .lightbox-toolbar .btn {
   flex-shrink: 0;
 }
+/* Visor: la foto ocupa el espacio libre y la barra va DEBAJO (no encima). */
+.lbx-stage { flex: 1 1 auto; min-height: 0; width: 100%; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 64px 84px 12px; }
+.lbx-stage .lightbox-img { max-width: 100%; max-height: 100%; }
+.lbx-note { color: rgba(255,255,255,0.75); font-size: 0.85rem; }
+.lbx-dock {
+  flex: none; width: min(980px, calc(100vw - 32px)); margin: 0 auto 16px;
+  background: rgba(14,16,20,0.92); border: 1px solid rgba(255,255,255,0.12); border-radius: var(--radius-lg);
+}
+.lbx-row { display: flex; align-items: center; gap: 12px 16px; flex-wrap: wrap; padding: 10px 12px; }
+.lbx-panel { padding: 10px 12px; border-top: 1px solid rgba(255,255,255,0.1); }
+.lbx-details { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 4px 16px; margin: 0; font-size: 0.78rem; }
+.lbx-details dt { color: rgba(255,255,255,0.55); }
+.lbx-details dd { margin: 0 0 6px; color: #fff; font-weight: 600; }
+.lbx-actions .btn.is-on { background: rgba(255,255,255,0.14); border-color: #fff; }
+@media (max-width: 700px) { .lbx-stage { padding: 56px 12px 8px; } .lbx-actions { flex-wrap: wrap; } }
 /* Barra del visor: nombre y origen a la izquierda, acciones a la derecha,
    etiquetas en su propia fila. Todo pensado para el escenario oscuro. */
 .lbx-bar { flex-wrap: wrap; gap: 8px 14px; padding: 10px 12px; max-width: min(70vw, 820px); }
