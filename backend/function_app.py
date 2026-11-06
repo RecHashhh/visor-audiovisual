@@ -458,6 +458,51 @@ def update_json_blob(blob_name: str, transform) -> Any:
     raise RuntimeError("La configuración cambió simultáneamente; vuelve a intentar")
 
 
+# ── Cargas guardadas (bloque independiente) ──────────────────────────────────
+def _presets_store():
+    from presets_store import Presets
+    return Presets(load_json_blob, update_json_blob, CONFIG_PREFIX)
+
+
+def _handle_upload_presets(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    perms, auth_err = require_perms(req, cap="upload")
+    if auth_err:
+        return auth_err
+    try:
+        store = _presets_store()
+        pid = req.route_params.get("id")
+        if req.method == "GET":
+            return ok(store.get())
+        if req.method == "DELETE":
+            return ok(store.delete(pid))
+        body = req.get_json()
+        return ok(store.run_result(pid, body, perms["email"]) if pid else store.save(body, perms["email"]))
+    except KeyError:
+        return err("Carga no encontrada", 404)
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except Exception:
+        logging.exception("upload_presets")
+        return err("No se pudo guardar la configuración", 500)
+
+
+@app.route(route="upload/presets", methods=["GET", "POST", "OPTIONS"])
+def upload_presets(req: func.HttpRequest) -> func.HttpResponse:
+    return _handle_upload_presets(req)
+
+
+@app.route(route="upload/presets/{id}", methods=["DELETE", "OPTIONS"])
+def delete_upload_preset(req: func.HttpRequest) -> func.HttpResponse:
+    return _handle_upload_presets(req)
+
+
+@app.route(route="upload/presets/{id}/run-result", methods=["POST", "OPTIONS"])
+def upload_preset_result(req: func.HttpRequest) -> func.HttpResponse:
+    return _handle_upload_presets(req)
+
+
 def load_project_names() -> dict:
     cached = cache_get("project-names")
     if cached is not None:

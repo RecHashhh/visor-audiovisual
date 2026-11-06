@@ -112,6 +112,12 @@ export const api = {
   applyTags: (paths, add = [], remove = []) => apiFetch('/api/tags/apply', { method: 'POST', body: JSON.stringify({ paths, add, remove }) }),
   getTagFiles: id => apiFetch(`/api/tags/${encodeURIComponent(id)}/files`),
   editTagCatalog: body => apiFetch('/api/tags/catalog', { method: 'POST', body: JSON.stringify(body) }),
+  // ── Cargas guardadas: bloque independiente ──
+  getUploadPresets: () => apiFetch('/api/upload/presets'),
+  saveUploadPreset: body => apiFetch('/api/upload/presets', { method: 'POST', body: JSON.stringify(body) }),
+  deleteUploadPreset: id => apiFetch(`/api/upload/presets/${encodeURIComponent(id)}`, { method: 'DELETE' }),
+  savePresetRun: (id, body) => apiFetch(`/api/upload/presets/${encodeURIComponent(id)}/run-result`, { method: 'POST', body: JSON.stringify(body) }),
+
   getReview:       () => apiFetch('/api/review'),
   updateReview:    (code, body) => apiFetch(`/api/review/${encodeURIComponent(code)}`, { method: 'POST', body: JSON.stringify(body) }),
   getMe:            ()           => apiFetch('/api/me'),
