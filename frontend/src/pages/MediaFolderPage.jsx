@@ -966,7 +966,7 @@ function FontSpecimen({ file: f, onDelete }) {
 }
 
 // ── Firmas / vista previa de HTML en un iframe aislado ────────────────────────
-function HtmlPreviews({ files }) {
+function HtmlPreviews({ files, onDelete }) {
   return (
     <section className="html-section">
       <h2 className="logo-group-title">Vista previa<span className="logo-group-count">{files.length}</span></h2>

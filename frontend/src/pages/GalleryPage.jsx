@@ -578,7 +578,7 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                       onClick={() => (selMode ? toggleSel(file.path) : openItem(file, idx))}
                       active={viewer?.file?.path === file.path}
                       label={collection ? originLabel?.(file) : null}
-                      tags={tagCatalog.filter(t => (tagAssignments[f.path] || []).includes(t.id))}
+                      tags={tagCatalog.filter(t => (tagAssignments[file.path] || []).includes(t.id))}
                       fav={isFav(file.path)}
                       onFav={() => collection ? onRemove?.(file.path) : onHeart(file)}
                       selMode={selMode}
