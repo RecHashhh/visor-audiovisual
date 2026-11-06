@@ -23,6 +23,12 @@ export function FavoritesProvider({ children }) {
 
   useEffect(() => { refresh() }, [refresh])
 
+  useEffect(() => {
+    const onFocus = () => { refresh() }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [refresh])
+
   const createCollection = useCallback(async (name) => {
     const res = await api.createFavCollection(name)
     if (res?.collection) setCollections(cs => [...cs, res.collection])

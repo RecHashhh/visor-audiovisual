@@ -24,7 +24,7 @@ const PREFIX_BADGE = {
   DRN: 'badge-orange', FOT: 'badge-blue', VID: 'badge-red',
   E360: 'badge-accent', I360: 'badge-dim',
 }
-const IMG_EXTS  = ['jpg','jpeg','png','tiff','tif','webp']
+const IMG_EXTS  = ['jpg','jpeg','png','tiff','tif','webp','gif']
 const VID_EXTS  = ['mp4','mov','avi']
 const RAW_EXTS  = ['dng','cr3','arw','raw','nef']
 const I360_EXTS = ['insv']
@@ -96,7 +96,7 @@ async function downloadAsFile(url, filename) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000)
 }
 
-export default function GalleryPage() {
+export default function GalleryPage({ collection = null, onRemove, originLabel }) {
   const { id, week } = useParams()
   const { me } = useAuthz()
   const [deleteTarget, setDeleteTarget] = useState(null)
@@ -114,6 +114,7 @@ export default function GalleryPage() {
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState(null)
   const [filter, setFilter] = useState('all')
+  const [order, setOrder] = useState('date')
   const [sizeFilter, setSizeFilter] = useState('all')
   const [viewer, setViewer] = useState(null)  // { idx, url, file, kind, width, height, metaLoading }
   const [previewOpen, setPreviewOpen] = useState(false)
@@ -191,11 +192,20 @@ export default function GalleryPage() {
     setPreviewOpen(false)
     setSelected(new Set()); setSelMode(false); setDeleteTarget(null)
 
+    if (collection) {
+      setBrowse({ folders: [], files: collection.items || [] })
+      setLoading(false)
+      return
+    }
     api.getBrowse(id, week || '')
       .then(setBrowse)
       .catch(e => setLoadError(e.message))
       .finally(() => setLoading(false))
-  }, [id, week])
+  }, [id, week, collection?.id])
+
+  useEffect(() => {
+    if (collection) setBrowse({ folders: [], files: collection.items || [] })
+  }, [collection])
 
   useEffect(() => {
     return () => {
@@ -219,7 +229,7 @@ export default function GalleryPage() {
     viewerRequestIdRef.current = requestId
     const kind = kindOf(file.name)
     const requiresUrl = kind === 'img' || kind === 'vid'
-    setFullscreenViewer(null)
+    if (!collection) setFullscreenViewer(null)
     if (closeTimerRef.current) {
       clearTimeout(closeTimerRef.current)
       closeTimerRef.current = null
@@ -278,7 +288,7 @@ export default function GalleryPage() {
   }
 
   const navViewer = async (dir) => {
-    const curIdx = displayFiles.findIndex(f => f.name === viewer?.file?.name)
+    const curIdx = displayFiles.findIndex(f => f.path === viewer?.file?.path)
     const next = displayFiles[(curIdx + dir + displayFiles.length) % displayFiles.length]
     if (!next) return
     const realIdx = displayFiles.indexOf(next)
@@ -286,9 +296,11 @@ export default function GalleryPage() {
   }
 
   const closeViewer = () => {
+    viewerRequestIdRef.current += 1
     setFullscreenViewer(null)
     setPreviewOpen(false)
     if (closeTimerRef.current) clearTimeout(closeTimerRef.current)
+    if (collection) { setViewer(null); return }
     closeTimerRef.current = setTimeout(() => {
       setViewer(null)
       closeTimerRef.current = null
@@ -313,7 +325,7 @@ export default function GalleryPage() {
     if (!chosen.length) return
     const resolved = await Promise.all(chosen.map(async f => ({ name: f.name, url: await getSas(f.path, 120) })))
     const wk = (week || '').split('/').pop() || 'fotos'
-    downloadZip(resolved, `${id}_${wk}.zip`)
+    downloadZip(resolved, collection ? `${collection.name}.zip` : `${id}_${wk}.zip`)
     exitSel()
   }
 
@@ -335,7 +347,10 @@ export default function GalleryPage() {
   const folders = browse.folders || []
   const showFoldersOnly = folders.length > 0
   const prefixes = [...new Set(files.map(f => prefixOf(f.name)))].filter(Boolean)
-  const formatFilteredFiles = filter === 'all' ? files : files.filter(f => prefixOf(f.name) === filter)
+  const orderedFiles = collection ? [...files].sort((a, b) => order === 'project'
+    ? (a.projectCode || '').localeCompare(b.projectCode || '') || a.path.localeCompare(b.path)
+    : (b.addedAt || '').localeCompare(a.addedAt || '')) : files
+  const formatFilteredFiles = filter === 'all' ? orderedFiles : orderedFiles.filter(f => collection ? kindOf(f.name) === filter : prefixOf(f.name) === filter)
   const displayFiles = sizeFilter === 'all'
     ? formatFilteredFiles
     : formatFilteredFiles.filter(f => sizeBucketOf(f.size) === sizeFilter)
@@ -373,8 +388,15 @@ export default function GalleryPage() {
     return () => window.removeEventListener('keydown', handler)
   }, [fullscreenViewer])
 
+  useEffect(() => {
+    if (collection) setFullscreenViewer(viewer)
+  }, [collection, viewer])
+
+  const originUrl = (file) => `/proyectos/project/${encodeURIComponent(file.projectCode || file.path.split('/')[0])}/week/${encodeURIComponent(file.week || file.path.split('/').slice(1, -1).join('/'))}`
+
   return (
     <>
+      {!collection && <>
       <div className="breadcrumb">
         <Link to="/proyectos">Proyectos</Link>
         <span className="sep">›</span>
@@ -397,6 +419,7 @@ export default function GalleryPage() {
         </button>
       </div>
 
+      </>}
       {/* Share panel */}
       {showSharePanel && (
         <div style={{ background: 'var(--bg2)', border: '1px solid var(--border)', borderRadius: 'var(--radius-lg)', padding: '16px', marginBottom: '16px' }}>
@@ -428,7 +451,7 @@ export default function GalleryPage() {
       )}
 
       {!loading && !loadError && (
-        <div className={`gallery-split ${viewer ? 'has-preview' : 'no-preview'}`}>
+        <div className={`gallery-split ${viewer && !collection ? 'has-preview' : 'no-preview'}`}>
           <div className="gallery-main">
             {folders.length > 0 && (
               <div className="week-list">
@@ -465,14 +488,17 @@ export default function GalleryPage() {
                   <button className={`filter-chip ${filter === 'all' ? 'active' : ''}`} onClick={() => setFilter('all')}>
                     Todos ({files.length})
                   </button>
-                  {prefixes.map(p => (
+                  {(collection ? ['img', 'vid'] : prefixes).map(p => (
                     <button key={p} className={`filter-chip ${filter === p ? 'active' : ''}`} onClick={() => setFilter(p)}>
-                      {p} ({files.filter(f => prefixOf(f.name) === p).length})
+                      {collection ? (p === 'img' ? 'Fotos' : 'Videos') : p} ({files.filter(f => collection ? kindOf(f.name) === p : prefixOf(f.name) === p).length})
                     </button>
                   ))}
                 </div>
 
-                <div className="gallery-toolbar" style={{ marginTop: 8 }}>
+                {collection && <select className="field-input" aria-label="Ordenar colección" value={order} onChange={e => setOrder(e.target.value)}>
+                  <option value="date">Fecha agregada</option><option value="project">Proyecto</option>
+                </select>}
+                {!collection && <div className="gallery-toolbar" style={{ marginTop: 8 }}>
                   <button className={`filter-chip ${sizeFilter === 'all' ? 'active' : ''}`} onClick={() => setSizeFilter('all')}>
                     Cualquier tamaño ({files.length})
                   </button>
@@ -485,12 +511,11 @@ export default function GalleryPage() {
                   <button className={`filter-chip ${sizeFilter === 'large' ? 'active' : ''}`} onClick={() => setSizeFilter('large')}>
                     Grande ({sizeCounts.large})
                   </button>
-                </div>
-
+                </div>}
                 <div className="gallery-selbar">
                   {!selMode ? (
                     <button className="btn btn-ghost btn-sm" onClick={() => setSelMode(true)}>
-                      ☑ {me?.caps?.deleteMedia ? 'Seleccionar' : 'Seleccionar para descargar'}
+                      ☑ {me?.caps?.deleteMedia && !collection ? 'Seleccionar' : 'Seleccionar para descargar'}
                     </button>
                   ) : (
                     <>
@@ -501,7 +526,7 @@ export default function GalleryPage() {
                         Descargar ZIP ({selected.size})
                       </button>
                       <button className="btn btn-ghost btn-sm" onClick={exitSel}>Cancelar</button>
-                      {me?.caps?.deleteMedia && <button className="btn btn-danger btn-sm" disabled={!selected.size}
+                      {me?.caps?.deleteMedia && !collection && <button className="btn btn-danger btn-sm" disabled={!selected.size}
                         onClick={() => setDeleteTarget({ paths: [...selected], count: selected.size })}>Eliminar ({selected.size})</button>}
                     </>
                   )}
@@ -518,9 +543,10 @@ export default function GalleryPage() {
                       }}
                       getSas={getSas}
                       onClick={() => (selMode ? toggleSel(file.path) : openItem(file, idx))}
-                      active={viewer?.file?.name === file.name}
+                      active={viewer?.file?.path === file.path}
+                      label={collection ? originLabel?.(file) : null}
                       fav={isFav(file.path)}
-                      onFav={() => onHeart(file)}
+                      onFav={() => collection ? onRemove?.(file.path) : onHeart(file)}
                       selMode={selMode}
                       checked={selected.has(file.path)}
                     />
@@ -530,7 +556,7 @@ export default function GalleryPage() {
             )}
           </div>
 
-          {viewer && (
+          {viewer && !collection && (
             <aside className={`gallery-preview ${previewOpen ? 'open' : 'closing'}`}>
               <div className="gallery-preview-header">
                 <div className="gallery-preview-titleWrap">
@@ -621,17 +647,25 @@ export default function GalleryPage() {
               role="dialog"
               aria-modal="true"
               aria-label={`Vista completa: ${fullscreenViewer.file?.name || 'archivo'}`}
-              onClick={e => e.target.className === 'lightbox-overlay' && setFullscreenViewer(null)}
+              onClick={e => e.target === e.currentTarget && (collection ? closeViewer() : setFullscreenViewer(null))}
             >
-              <button className="lightbox-close" aria-label="Cerrar vista completa" onClick={() => setFullscreenViewer(null)}>✕</button>
+              <button className="lightbox-close" aria-label="Cerrar vista completa" onClick={() => collection ? closeViewer() : setFullscreenViewer(null)}>✕</button>
               <button className="lightbox-nav prev" onClick={() => navViewer(-1)}>‹</button>
               <button className="lightbox-nav next" onClick={() => navViewer(1)}>›</button>
 
-              <img className="lightbox-img" src={fullscreenViewer.url} alt={fullscreenViewer.file?.name || 'preview'} />
+              {fullscreenViewer.urlLoading ? <div className="spinner" /> : fullscreenViewer.kind === 'vid' ? (
+                <SmartVideo key={fullscreenViewer.file.path} className="lightbox-img" src={fullscreenViewer.url}
+                  onLoadedMetadata={e => onVideoMeta(fullscreenViewer.url, { width: e.currentTarget.videoWidth, height: e.currentTarget.videoHeight })}
+                  onUnsupported={() => onVideoMeta(fullscreenViewer.url, { unsupported: true })} />
+              ) : fullscreenViewer.kind === 'img' && fullscreenViewer.url ? (
+                <img className="lightbox-img" src={fullscreenViewer.url} alt={fullscreenViewer.file?.name || 'preview'} />
+              ) : <div className="lightbox-file-fallback">Vista previa no disponible</div>}
+              {fullscreenViewer.unsupported && <span>Descarga el video para reproducirlo.</span>}
 
               <div className="lightbox-bottom-row">
                 <div className="lightbox-toolbar">
                   <span className="lightbox-name">{fullscreenViewer.file?.name || 'Sin nombre'}</span>
+                  {collection && <Link className="btn btn-ghost btn-sm" to={originUrl(fullscreenViewer.file)}>Ir al origen</Link>}
                   <button className="btn btn-ghost btn-sm" onClick={() => download(fullscreenViewer.file)}>Descargar</button>
                 </div>
 
@@ -694,7 +728,7 @@ export default function GalleryPage() {
   )
 }
 
-function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active, fav, onFav, selMode, checked }) {
+function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active, fav, onFav, selMode, checked, label }) {
   const [loading, setLoading] = useState(false)
   const ref = useRef(null)
   const prefix = prefixOf(file.name)
@@ -760,7 +794,7 @@ function GalleryItem({ file, thumbUrl, onThumbLoaded, getSas, onClick, active, f
         </button>
       )}
       <div className={`gallery-item-type badge ${typeColor}`}>{prefix}</div>
-      <div className="gallery-item-label">{file.name}</div>
+      <div className="gallery-item-label" title={label || file.name}>{label || file.name}</div>
     </div>
   )
 }

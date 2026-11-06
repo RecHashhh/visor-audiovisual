@@ -189,6 +189,8 @@ export const api = {
   deleteFavCollection: (cid)             => apiFetch(`/api/favorites/collection/${cid}`, { method: 'DELETE' }),
   addFavItem:          (collectionId, item) => apiFetch('/api/favorites/item', { method: 'POST', body: JSON.stringify({ action: 'add', collectionId, ...item }) }),
   removeFavItem:       (path, collectionId = '') => apiFetch('/api/favorites/item', { method: 'POST', body: JSON.stringify({ action: 'remove', path, collectionId }) }),
+  setFavMembers:       (cid, members) => apiFetch(`/api/favorites/collection/${cid}/members`, { method: 'POST', body: JSON.stringify({ members }) }),
+  leaveFavCollection:   (cid) => apiFetch(`/api/favorites/collection/${cid}/leave`, { method: 'POST' }),
   shareFavCollection:  (cid, expiryDays = 30) => apiFetch(`/api/favorites/collection/${cid}/share`, { method: 'POST', body: JSON.stringify({ expiryDays }) }),
   listShares:       ()           => apiFetch('/api/share/list'),
   revokeShare:      (token)      => apiFetch(`/api/share/${token}`, { method: 'DELETE' }),

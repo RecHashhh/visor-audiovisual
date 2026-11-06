@@ -127,6 +127,9 @@ function AppRoutes() {
           <Route path="/favoritos" element={
             <RequireSection section="proyectos"><FavoritesPage /></RequireSection>
           } />
+          <Route path="/favoritos/:cid" element={
+            <RequireSection section="proyectos"><FavoritesPage /></RequireSection>
+          } />
           <Route path="/proyectos/project/:id" element={
             <RequireSection section="proyectos"><WeeksPage /></RequireSection>
           } />

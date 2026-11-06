@@ -1,9 +1,8 @@
 // src/pages/FavoritesPage.jsx
-// Favoritos del usuario: sus colecciones con nombre, una debajo de otra. Cada
-// una muestra una tira de fotos (se desplaza a la derecha) y "Ver todas" abre
-// esa colección sola en grande. Comparte cada colección como link (sin login).
+// Colecciones personales y compartidas; el detalle reutiliza la galería de Obra.
 import { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams, useNavigate } from 'react-router-dom'
+import GalleryPage from './GalleryPage'
 import { api } from '../utils/api'
 import { fetchThumb } from '../utils/thumbs'
 import { useFavorites } from '../utils/favorites'
@@ -44,7 +43,21 @@ function PhotoTile({ item, onRemove }) {
 export default function FavoritesPage() {
   const { collections, loaded, renameCollection, deleteCollection, removeFromCollection, refresh } = useFavorites()
   const { downloadZip, isBusy } = useDownloads()
-  const [viewingId, setViewingId] = useState(null)   // colección abierta en grande (o null = lista)
+  const { cid: viewingId } = useParams()
+  const navigate = useNavigate()
+  const setViewingId = (cid) => navigate(cid ? `/favoritos/${cid}` : '/favoritos')
+  const [people, setPeople] = useState(null)
+  const [email, setEmail] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+  const [projects, setProjects] = useState([])
+  useEffect(() => { api.getProjects().then(p => setProjects(Array.isArray(p) ? p : [])).catch(e => setError(e.message)) }, [])
+  const originLabel = (item) => {
+    const code = item.projectCode || item.path.split('/')[0]
+    const project = projects.find(p => p.code === code)
+    const week = item.week || item.path.split('/').slice(1, -1).join('/')
+    return `${code} · ${project?.name || item.projectName || code} · ${week || 'Sin semana'}`
+  }
   const [share, setShare] = useState(null)           // { cid, days, url, loading, error }
   const [copied, setCopied] = useState(false)
   const [renaming, setRenaming] = useState(null)     // { cid, name }
@@ -52,9 +65,19 @@ export default function FavoritesPage() {
   useEffect(() => { refresh() }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const viewing = useMemo(() => collections.find(c => c.id === viewingId) || null, [collections, viewingId])
-  useEffect(() => {
-    if (viewingId && !collections.some(c => c.id === viewingId)) setViewingId(null)
-  }, [collections, viewingId])
+
+
+  const run = async (action) => {
+    setError(''); setBusy(true)
+    try { await action() } catch (e) { setError(e.message) } finally { setBusy(false) }
+  }
+  const savePeople = () => run(async () => {
+    const members = [...people.members]
+    const next = email.trim().toLowerCase()
+    if (next && !members.includes(next)) members.push(next)
+    await api.setFavMembers(people.cid, members)
+    await refresh(); setPeople(null); setEmail('')
+  })
 
   const openShare = (cid) => setShare({ cid, days: 30, url: null, loading: false, error: null })
   const setDays = (days) => setShare(s => ({ ...s, days, url: null }))
@@ -91,10 +114,14 @@ export default function FavoritesPage() {
   // Barra de acciones + panel de compartir, reutilizable en lista y en detalle.
   const Actions = ({ c }) => (
     <div className="fav-col-bar-actions">
-      <button className="btn btn-primary btn-sm" onClick={() => openShare(c.id)} disabled={!(c.items || []).length}>Compartir</button>
+      {c.role !== 'editor' && <>
+        <button className="btn btn-primary btn-sm" onClick={() => { setEmail(''); setPeople({ cid: c.id, members: [...(c.members || [])] }) }}>Compartir con personas</button>
+        <button className="btn btn-ghost btn-sm" onClick={() => openShare(c.id)} disabled={!(c.items || []).length}>Enlace público</button>
+      </>}
       <button className="btn btn-ghost btn-sm" onClick={() => downloadCollection(c)} disabled={!(c.items || []).length || isBusy()}>Descargar ZIP</button>
-      <button className="btn btn-ghost btn-sm" onClick={() => setRenaming({ cid: c.id, name: c.name })}>Renombrar</button>
-      <button className="btn btn-ghost btn-sm" onClick={() => doDelete(c)}>Eliminar</button>
+      {c.role !== 'editor' && <><button className="btn btn-ghost btn-sm" onClick={() => setRenaming({ cid: c.id, name: c.name })}>Renombrar</button>
+      <button className="btn btn-ghost btn-sm" onClick={() => run(() => doDelete(c))}>Eliminar</button></>}
+      {c.role === 'editor' && <button className="btn btn-ghost btn-sm" onClick={() => run(async () => { await api.leaveFavCollection(c.id); await refresh(); if (viewingId) setViewingId(null) })}>Salir de la colección</button>}
     </div>
   )
   const SharePanel = ({ c }) => (share && share.cid === c.id) ? (
@@ -126,19 +153,17 @@ export default function FavoritesPage() {
     <>
       <div className="page-header brand-page-header">
         <div>
-          <h1 className="page-title">⭐ Favoritos</h1>
-          <p className="page-sub">Tus colecciones de fotos favoritas. Solo tú las ves. Compártelas como enlace cuando quieras.</p>
+          <h1 className="page-title">⭐ Favoritos <span title="Guarda fotos y videos desde el corazón de la galería. Las personas invitadas pueden editar la colección." aria-label="Ayuda de favoritos">?</span></h1>
         </div>
       </div>
 
+      {error && <div className="field-error" role="alert">{error}</div>}
+      {loaded && viewingId && !viewing && <div className="empty">Colección no disponible. <Link to="/favoritos">Volver</Link></div>}
       {!loaded && <div className="loading"><div className="spinner" /></div>}
 
-      {loaded && collections.length === 0 && (
+      {loaded && !viewingId && collections.length === 0 && (
         <div className="empty">
           <div className="empty-text">Aún no tienes favoritos</div>
-          <p className="access-empty-hint">
-            Entra a un proyecto, pasa el mouse por una foto y toca el ♥ para guardarla en una colección. Luego aparecerán aquí.
-          </p>
           <Link className="btn btn-primary" to="/proyectos" style={{ marginTop: 12 }}>Ir a Proyectos</Link>
         </div>
       )}
@@ -148,24 +173,20 @@ export default function FavoritesPage() {
         <div className="fav-detail">
           <button className="btn btn-ghost btn-sm fav-back" onClick={() => setViewingId(null)}>‹ Todas las colecciones</button>
           <div className="fav-col-bar">
-            <div className="fav-col-bar-title">{viewing.name} · {(viewing.items || []).length} fotos</div>
+            <div className="fav-col-bar-title">{viewing.name} · {(viewing.items || []).length} archivos
+              {viewing.shared && <span className="badge badge-blue" title={`Dueño: ${viewing.owner} · Miembros: ${(viewing.members || []).join(', ') || 'Ninguno'}`}>Compartida</span>}
+              {viewing.role === 'editor' && <small> de {viewing.owner}</small>}
+            </div>
             <Actions c={viewing} />
           </div>
           <SharePanel c={viewing} />
-          {(viewing.items || []).length === 0 ? (
-            <div className="empty"><div className="empty-text">Esta colección está vacía</div></div>
-          ) : (
-            <div className="gallery-grid fav-grid">
-              {(viewing.items || []).map(item => (
-                <PhotoTile key={item.path} item={item} onRemove={() => removeFromCollection(viewing.id, item.path).catch(() => {})} />
-              ))}
-            </div>
-          )}
+          <GalleryPage key={viewing.id} collection={viewing} originLabel={originLabel}
+            onRemove={path => run(() => removeFromCollection(viewing.id, path))} />
         </div>
       )}
 
       {/* LISTA: colecciones una debajo de otra, con tira horizontal */}
-      {loaded && !viewing && collections.length > 0 && (
+      {loaded && !viewingId && collections.length > 0 && (
         <div className="fav-sections">
           {collections.map(c => {
             const items = c.items || []
@@ -175,7 +196,9 @@ export default function FavoritesPage() {
               <section key={c.id} className="fav-section">
                 <div className="fav-col-bar">
                   <button className="fav-section-title" onClick={() => setViewingId(c.id)} title="Ver todas">
-                    {c.name} <span className="fav-section-count">{items.length} fotos</span>
+                    {c.name} <span className="fav-section-count">{items.length} archivos</span>
+                    {c.shared && <span className="badge badge-blue" title={`Dueño: ${c.owner} · Miembros: ${(c.members || []).join(', ') || 'Ninguno'}`}>Compartida</span>}
+                    {c.role === 'editor' && <small> de {c.owner}</small>}
                   </button>
                   <Actions c={c} />
                 </div>
@@ -185,8 +208,8 @@ export default function FavoritesPage() {
                 ) : (
                   <div className="fav-strip">
                     {strip.map(item => (
-                      <div key={item.path} className="fav-strip-item">
-                        <PhotoTile item={item} onRemove={() => removeFromCollection(c.id, item.path).catch(() => {})} />
+                      <div key={item.path} className="fav-strip-item" onClick={() => setViewingId(c.id)}>
+                        <PhotoTile item={item} onRemove={() => run(() => removeFromCollection(c.id, item.path))} />
                       </div>
                     ))}
                     {rest > 0 && (
@@ -203,13 +226,32 @@ export default function FavoritesPage() {
         </div>
       )}
 
+      <Modal open={!!people} onClose={() => !busy && setPeople(null)} title="Compartir con personas"
+        footer={<><button className="btn btn-ghost" disabled={busy} onClick={() => setPeople(null)}>Cancelar</button>
+          <button className="btn btn-primary" disabled={busy} onClick={savePeople}>Guardar</button></>}>
+        <span title="Los miembros pueden agregar, quitar y descargar archivos. Solo el dueño administra la colección. Máximo 50 correos." aria-label="Permisos de miembros">?</span>
+        {people?.members.map(member => <div className="fav-col-bar" key={member}><span>{member}</span>
+          <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => setPeople(p => ({ ...p, members: p.members.filter(m => m !== member) }))}>Quitar</button></div>)}
+        <form onSubmit={e => { e.preventDefault(); savePeople() }}>
+          <label className="field"><span className="field-label">Agregar correo</span>
+            <input className="field-input" type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="nombre@ripconciv.com" />
+          </label>
+          <button className="btn btn-ghost btn-sm" type="button" disabled={busy || !email.trim()} onClick={() => {
+            const next = email.trim().toLowerCase()
+            if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(next)) { setError('Correo inválido'); return }
+            setPeople(p => ({ ...p, members: [...new Set([...p.members, next])] })); setEmail('')
+          }}>Agregar</button>
+        </form>
+        {error && <div className="field-error" role="alert">{error}</div>}
+      </Modal>
+
       <Modal
         open={!!renaming}
         onClose={() => setRenaming(null)}
         title="Renombrar colección"
         footer={<>
           <button className="btn btn-ghost" onClick={() => setRenaming(null)}>Cancelar</button>
-          <button className="btn btn-primary" onClick={doRename} disabled={!renaming?.name.trim()}>Guardar</button>
+          <button className="btn btn-primary" onClick={() => run(doRename)} disabled={!renaming?.name.trim()}>Guardar</button>
         </>}
       >
         {renaming && (
