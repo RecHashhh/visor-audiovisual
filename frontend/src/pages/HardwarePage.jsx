@@ -6,10 +6,10 @@ import './HardwarePage.css';
 const states = {
   sin_computadora: 'Sin computadora',
   sin_correo: 'Sin correo',
-  sin_cuenta_m365: 'Sin cuenta M365',
+  sin_cuenta_m365: 'Correo sin cuenta',
   cuenta_bloqueada: 'Cuenta bloqueada',
   sin_licencia: 'Sin licencia',
-  ok: 'Correo y licencia'
+  ok: 'Completo'
 };
 const sourceCountLabels = { items: 'equipos', assignments: 'asignaciones', disposals: 'bajas', disposalRequests: 'solicitudes', custodians: 'custodios', payroll: 'personas', users: 'cuentas', skus: 'licencias', people: 'personas' };
 const projectName = p => `${p?.code || ''} ${p?.name || ''}${p?.homologated === false ? ' · sin homologar' : ''}`.trim();
@@ -22,6 +22,18 @@ const group = (rows, key, metric = 'count') => Object.entries(rows.reduce((out, 
   count
 }));
 const sorted = rows => [...rows].sort((a, b) => b.count - a.count);
+const TABS = [['resumen', 'Resumen'], ['compras', 'Compras'], ['bajas', 'Bajas y vida útil'], ['personas', 'Personas y licencias'], ['proyectos', 'Proyectos'], ['calidad', 'Calidad de datos']];
+const STATE_COLORS = { sin_computadora: '#e5484d', sin_correo: '#f59e0b', sin_cuenta_m365: '#f5b544', cuenta_bloqueada: '#64748b', sin_licencia: '#8b5cf6', ok: '#10a37f' };
+const pct = (part, total) => total ? Math.round(100 * part / total) + '%' : '—';
+function Card({ title, detail, onDetail, children }) {
+  return <section className="hw-card">
+    <header>
+      <h3>{title}</h3>
+      {onDetail && <button type="button" className="hw-card-link" onClick={onDetail}>{detail || 'Ver detalle'} →</button>}
+    </header>
+    {children}
+  </section>;
+}
 const dateLabel = value => value ? new Date(value).toLocaleString('es-EC', {
   timeZone: 'America/Guayaquil',
   day: '2-digit',
@@ -120,8 +132,10 @@ function Table({
 function Panel({
   title,
   help,
+  when = true,
   children
 }) {
+  if (!when) return null;
   return <section className="hw-panel">
   <h2>
     {title}
@@ -143,6 +157,7 @@ export default function HardwarePage() {
     [reason, setReason] = useState(''),
     [disposalYear, setDisposalYear] = useState('');
   const [adminArea, setAdminArea] = useState('ADMINISTRATIVOS OFICINAS');
+  const [tab, setTab] = useState('resumen');
   const upload = useRef(null);
   useEffect(() => {
     let live = true;
@@ -173,7 +188,8 @@ export default function HardwarePage() {
       if (upload.current) upload.current.value = '';
     }
   };
-  const items = (snapshot?.items || []).filter(i => (!company || i.companies.includes(company)) && (!type || i.type === type));
+  // Los muebles no son hardware: quedan fuera salvo que se elija el tipo MUEBLE.
+  const items = (snapshot?.items || []).filter(i => (!company || i.companies.includes(company)) && (type ? i.type === type : i.type !== 'MUEBLE'));
   const ids = new Set(items.map(i => String(i.id))),
     active = items.filter(i => i.active);
   const itemById = Object.fromEntries((snapshot?.items || []).map(i => [String(i.id), i]));
@@ -214,7 +230,8 @@ export default function HardwarePage() {
   const selectedPeople = people.filter(p => !area || p.area === area);
   const funnel = Object.entries(states).map(([key, label]) => ({
     label,
-    count: selectedPeople.filter(p => p.status === key).length
+    count: selectedPeople.filter(p => p.status === key).length,
+    color: STATE_COLORS[key]
   }));
   const projectRows = (snapshot?.byProject || []).map(p => {
     const equipment = active.filter(i => projectName(i.project) === projectName(p));
@@ -245,7 +262,6 @@ export default function HardwarePage() {
   const durability = snapshot?.durability || { byType: [], byReason: [], fleetAge: [] };
   const years = m => m == null ? '—' : (m / 12).toLocaleString('es-EC', { maximumFractionDigits: 1 }) + ' años';
   const equipmentRows = items.filter(i => !purchaseYear || i.year === purchaseYear);
-  const cards = [['Equipos vigentes', active.length], ['Computadoras', active.filter(i => ['LAPTOP', 'CPU'].includes(i.type)).length], ['Valor vigente', usd(active.reduce((s, i) => s + i.value, 0))], ['Comprados ' + year, items.filter(i => i.year === year).length], ['Valor comprado ' + year, usd(items.filter(i => i.year === year).reduce((t, i) => t + i.value, 0))], ['Bajas ' + year, allDisposals.filter(d => d.year === year).length], ['Solicitudes en proceso', requests.filter(r => r.category === 'en_proceso').length], ['Personas objetivo', k.targetPeople], ['Con computadora', (k.withComputerPercent || 0) + '%'], ['Correo y licencia', (k.licensedEmailPercent || 0) + '%']];
   return <div className="hw-page">
   <header className="hw-toolbar">
     <h1>
@@ -267,7 +283,11 @@ export default function HardwarePage() {
     {error}
   </div>}
   {snapshot && <>
-    <div className="hw-toolbar">
+    <div className="hw-toolbar hw-filters">
+      <nav className="segmented hw-tabs" role="tablist" aria-label="Secciones de Hardware">
+        {TABS.map(([key, label]) => <button key={key} type="button" role="tab" aria-selected={tab === key}
+          className={`segmented-btn ${tab === key ? 'active' : ''}`} onClick={() => setTab(key)}>{label}</button>)}
+      </nav>
       <label>
         Empresa
         <select value={company} onChange={e => setCompany(e.target.value)}>
@@ -294,25 +314,48 @@ export default function HardwarePage() {
         </select>
       </label>
     </div>
-    <div className="hw-sources">
+    {tab === 'calidad' && <div className="hw-sources">
       {Object.entries(snapshot.sources).map(([name, source]) => <span key={name} className={source.error ? 'hw-source-error' : ''}>
         {name === 'nomina' ? 'Nómina' : name === 'graph' ? 'Microsoft 365' : 'Mesa'}
         :
         {source.error || `${dateLabel(source.generatedAt)} · ${Object.entries(source.counts || {}).map(([key, count]) => `${number(count)} ${sourceCountLabels[key] || key}`).join(' · ')}`}
       </span>)}
-    </div>
+    </div>}
     {!snapshot.payrollUploaded && <div className="alert">Actualiza la nómina para calcular áreas y cobertura de personas.</div>}
-    <div className="hw-kpis">
-      {cards.map(([label, value]) => <div key={label}>
-        <span>
-          {label}
-        </span>
-        <strong>
-          {typeof value === 'number' ? number(value) : value}
-        </strong>
-      </div>)}
-    </div>
-    <Panel title="Compras">
+    {tab === 'resumen' && <div className="hw-dashboard">
+      <div className="hw-kpis hw-kpis-exec">
+        <div><span>Equipos en uso</span><strong>{number(active.length)}</strong><small>{usd(active.reduce((t, i) => t + i.value, 0))} en valor</small></div>
+        <div><span>Computadoras</span><strong>{number(active.filter(i => ['LAPTOP', 'CPU'].includes(i.type)).length)}</strong><small>{number(active.filter(i => i.type === 'LAPTOP').length)} laptops · {number(active.filter(i => i.type === 'CPU').length)} escritorio</small></div>
+        <div><span>Inversión {year}</span><strong>{usd(items.filter(i => i.year === year).reduce((t, i) => t + i.value, 0))}</strong><small>{number(items.filter(i => i.year === year).length)} equipos comprados</small></div>
+        <div><span>Bajas {year}</span><strong>{number(disposalYears[1][1])}</strong><small>{disposalYears[0][1] ? `${disposalYears[1][1] >= disposalYears[0][1] ? '+' : ''}${Math.round((disposalYears[1][1] - disposalYears[0][1]) / disposalYears[0][1] * 100)}% frente a ${disposalYears[0][0]}` : 'sin año anterior'}</small></div>
+        <div><span>Personal con computadora</span><strong>{pct(people.filter(p => p.status !== 'sin_computadora').length, people.length)}</strong><small>{number(people.filter(p => p.status === 'sin_computadora').length)} de {number(people.length)} sin equipo</small></div>
+        <div><span>Personal con correo y licencia</span><strong>{pct(people.filter(p => p.status === 'ok').length, people.length)}</strong><small>{number((snapshot.licenses?.blockedWithLicense || []).length)} licencias en cuentas bloqueadas</small></div>
+      </div>
+      <div className="hw-cards">
+        <Card title="Inversión por año" onDetail={() => setTab('compras')}>
+          <PurchaseChart height={200} data={purchases.filter(p => /^\d{4}$/.test(p.label)).slice(-6)} onSelect={label => { setPurchaseYear(label); setTab('compras'); }} />
+        </Card>
+        <Card title="Bajas por año y motivo" onDetail={() => setTab('bajas')}>
+          <StackedChart height={200} data={[...new Set(allDisposals.map(d => d.year))].filter(y => /^\d{4}$/.test(y)).sort().slice(-5).map(y => ({
+            label: y,
+            series: Object.fromEntries(sorted(group(allDisposals.filter(d => d.year === y).map(d => ({ ...d, count: 1 })), 'reason')).slice(0, 4).map(d => [d.label, d.count]))
+          }))} onSelect={label => { setPurchaseYear(label); setTab('bajas'); }} />
+        </Card>
+        <Card title="Personal administrativo y técnico" onDetail={() => setTab('personas')}>
+          <FunnelChart height={200} data={Object.entries(states).map(([key, label]) => ({ label, count: people.filter(p => p.status === key).length, color: STATE_COLORS[key] }))} />
+        </Card>
+        <Card title="Antigüedad de las computadoras" onDetail={() => setTab('bajas')}>
+          <StackedChart height={200} data={durability.fleetAge.map(r => ({ label: r.bucket, series: { Laptops: r.LAPTOP, Escritorio: r.CPU } }))} />
+        </Card>
+        <Card title={purchaseYear ? `Comprados en ${purchaseYear} por tipo` : 'Equipos en uso por tipo'} onDetail={() => setTab('compras')}>
+          <HorizontalChart height={200} data={types.slice(0, 6)} />
+        </Card>
+        <Card title="Licencias Microsoft 365 en uso" onDetail={() => setTab('personas')}>
+          <HorizontalChart height={200} data={(snapshot.licenses?.bySku || []).filter(r => r.purchased < 5000).slice(0, 6).map(r => ({ label: r.license, count: r.assigned }))} />
+        </Card>
+      </div>
+    </div>}
+    <Panel when={tab === 'compras'} title="Compras">
       <div className="hw-grid">
         <PurchaseChart title="Cantidad y valor por año" data={purchases} onSelect={label => setPurchaseYear(purchaseYear === label ? '' : label)} />
         <StackedChart title="Empresas por año" data={companySeries} onSelect={label => setPurchaseYear(purchaseYear === label ? '' : label)} />
@@ -327,10 +370,10 @@ export default function HardwarePage() {
       </div>
       <Table title="Equipos comprados" rows={equipmentRows} columns={[...equipmentColumns.slice(0, 2), ['brand', 'Marca'], ['model', 'Modelo'], ['year', 'Año'], ['value', 'USD', null, usd], ['project', 'Proyecto', r => projectName(r.project)], ['active', 'Estado', r => r.active ? 'Vigente' : 'Baja']]} />
     </Panel>
-    <Panel title="Equipos por tipo">
+    <Panel when={tab === 'compras'} title="Equipos por tipo">
       <HorizontalChart title={purchaseYear ? `Comprados en ${purchaseYear} · top 12` : 'Vigentes · top 12'} data={topTypes} onSelect={label => setType(label === 'Otros' ? '' : type === label ? '' : label)} />
     </Panel>
-    <Panel title="Durabilidad" help="Vida útil real: tiempo entre la fecha de compra y la baja registrada en RIP_TIC (se omiten equipos sin fecha de compra). Antigüedad: computadoras vigentes según su año de compra.">
+    <Panel when={tab === 'bajas'} title="Vida útil" help="Vida útil real: tiempo entre la fecha de compra y la baja registrada en RIP_TIC (se omiten equipos sin fecha de compra). Antigüedad: computadoras vigentes según su año de compra.">
       <div className="hw-grid">
         <HorizontalChart title="Vida útil mediana por tipo · años" data={durability.byType.filter(r => r.count >= 3).slice(0, 12).map(r => ({ label: r.type, count: Math.round(r.medianMonths / 12 * 10) / 10 }))} />
         <StackedChart title="Antigüedad de computadoras vigentes" data={durability.fleetAge.map(r => ({ label: r.bucket, series: { Laptops: r.LAPTOP, CPU: r.CPU } }))} />
@@ -338,7 +381,7 @@ export default function HardwarePage() {
       <Table title="Vida útil por tipo" filename="hardware-durabilidad" rows={durability.byType} columns={[['type', 'Tipo'], ['count', 'Bajas con fecha'], ['medianMonths', 'Mediana', r => years(r.medianMonths)], ['avgMonths', 'Promedio', r => years(r.avgMonths)]]} />
       <Table title="Vida útil por motivo de baja" rows={durability.byReason} columns={[['reason', 'Motivo'], ['count', 'Bajas'], ['medianMonths', 'Mediana', r => years(r.medianMonths)], ['avgMonths', 'Promedio', r => years(r.avgMonths)]]} />
     </Panel>
-    <Panel title="Bajas" help="Histórico de bajas y solicitudes de RIP_TIC. Los estados autorizados o aprobados se agrupan como autorizadas; rechazados como rechazadas; los demás, en proceso.">
+    <Panel when={tab === 'bajas'} title="Bajas" help="Histórico de bajas y solicitudes de RIP_TIC. Los estados autorizados o aprobados se agrupan como autorizadas; rechazados como rechazadas; los demás, en proceso.">
       <div className="hw-kpis hw-kpis-compact">
         {disposalYears.map(([y, n]) => <div key={y}><span>Bajas {y}</span><strong>{number(n)}</strong></div>)}
         <div><span>Variación</span><strong>{disposalYears[0][1] ? `${Math.round((disposalYears[1][1] - disposalYears[0][1]) / disposalYears[0][1] * 100)}%` : '—'}</strong></div>
@@ -378,14 +421,14 @@ export default function HardwarePage() {
           Rechazadas: 'rechazadas'
         }[requestState])} columns={[['code', 'Código'], ['equipmentType', 'Tipo'], ['requestDate', 'Fecha'], ['state', 'Estado'], ['reason', 'Motivo'], ['note', 'Nota']]} />
     </Panel>
-    <Panel title="Asignaciones">
+    <Panel when={tab === 'proyectos'} title="Asignaciones">
       <HorizontalChart title="Laptops por área" data={(snapshot.laptopsByArea || []).map(a => ({
           label: a.area,
           count: active.filter(i => i.type === 'LAPTOP' && i.area === a.area).length
         }))} onSelect={label => setArea(people.some(p => p.area === label) ? label : '')} />
       <Table title="Proyectos" rows={projectRows} filename="hardware-proyectos" columns={[['project', 'Proyecto', projectName], ['laptops', 'Laptops'], ['cpu', 'CPU'], ['other', 'Otros'], ['value', 'USD', null, usd], ['purchases', 'Compras'], ['purchaseYears', 'Compras por año', r => Object.entries(r.purchasesByYear).sort().map(([y, n]) => `${y}: ${number(n)}`).join(' · ')], ['disposed', 'Bajas'], ['targetPeople', 'Objetivo'], ['withoutComputer', 'Sin computadora']]} />
     </Panel>
-    <Panel title="Administrativos" help="Quién sí y quién no tiene computadora (laptop o CPU vigente asignada en RIP_TIC) según el área de la nómina del mes. De los que tienen, el estado de su correo en Microsoft 365.">
+    <Panel when={tab === 'personas'} title="Administrativos" help="Quién sí y quién no tiene computadora (laptop o CPU vigente asignada en RIP_TIC) según el área de la nómina del mes. De los que tienen, el estado de su correo en Microsoft 365.">
       <div className="segmented hw-area-tabs" role="tablist">
         {['ADMINISTRATIVOS OFICINAS', 'ADMINISTRATIVO PROYECTOS', 'TECNICO'].map(a => <button key={a} type="button" role="tab" aria-selected={adminArea === a}
           className={`segmented-btn ${adminArea === a ? 'active' : ''}`} onClick={() => setAdminArea(a)}>{a === 'TECNICO' ? 'Técnicos' : a === 'ADMINISTRATIVOS OFICINAS' ? 'Oficinas' : 'Proyectos'} ({number(people.filter(p => p.area === a).length)})</button>)}
@@ -396,18 +439,18 @@ export default function HardwarePage() {
         {mailStates.map(st => <div key={st}><span>Con equipo · {states[st]}</span><strong>{number(withComputer.filter(p => p.status === st).length)}</strong></div>)}
       </div>
       <div className="hw-grid">
-        <Table title={`Con computadora · ${number(withComputer.length)}`} filename="hardware-con-computadora" rows={withComputer} columns={[['name', 'Nombre'], ['position', 'Cargo'], ['project', 'Proyecto', r => projectName(r.project)], ['computers', 'Computadora', r => r.computers.map(c => `${c.code} · ${c.type} ${c.brand || ''} ${c.model || ''}`).join('; ')], ['email', 'Correo'], ['status', 'Correo/licencia', r => states[r.status]]]} />
-        <Table title={`Sin computadora · ${number(withoutComputer.length)}`} filename="hardware-sin-computadora" rows={withoutComputer} columns={[['name', 'Nombre'], ['position', 'Cargo'], ['project', 'Proyecto', r => projectName(r.project)], ['email', 'Correo']]} />
+        <Table title="Con computadora" filename="hardware-con-computadora" rows={withComputer} columns={[['name', 'Nombre'], ['position', 'Cargo'], ['project', 'Proyecto', r => projectName(r.project)], ['computers', 'Computadora', r => r.computers.map(c => `${c.code} · ${c.type} ${c.brand || ''} ${c.model || ''}`).join('; ')], ['email', 'Correo'], ['status', 'Correo/licencia', r => states[r.status]]]} />
+        <Table title="Sin computadora" filename="hardware-sin-computadora" rows={withoutComputer} columns={[['name', 'Nombre'], ['position', 'Cargo'], ['project', 'Proyecto', r => projectName(r.project)], ['email', 'Correo']]} />
       </div>
     </Panel>
-    <Panel title="Licencias" help="Microsoft 365: compradas, asignadas y libres por tipo de licencia. «En cuentas bloqueadas»: licencias pagadas en cuentas que ya no pueden iniciar sesión; se pueden recuperar.">
+    <Panel when={tab === 'personas'} title="Licencias" help="Microsoft 365: compradas, asignadas y libres por tipo de licencia. «En cuentas bloqueadas»: licencias pagadas en cuentas que ya no pueden iniciar sesión; se pueden recuperar.">
       <div className="hw-grid">
         <HorizontalChart title="Asignadas por licencia" data={(snapshot.licenses?.bySku || []).filter(r => r.purchased < 5000).slice(0, 12).map(r => ({ label: r.license, count: r.assigned }))} />
         <Table title="Licencias" filename="hardware-licencias" rows={snapshot.licenses?.bySku || []} columns={[['license', 'Licencia'], ['purchased', 'Compradas'], ['assigned', 'Asignadas'], ['available', 'Libres'], ['blockedAccounts', 'En cuentas bloqueadas'], ['targetPeople', 'Personal objetivo']]} />
       </div>
-      <Table title={`Cuentas bloqueadas con licencia · ${number((snapshot.licenses?.blockedWithLicense || []).length)}`} filename="hardware-licencias-bloqueadas" rows={snapshot.licenses?.blockedWithLicense || []} columns={[['account', 'Cuenta'], ['licenses', 'Licencias', r => r.licenses.join(', ')]]} />
+      <Table title="Cuentas bloqueadas con licencia" filename="hardware-licencias-bloqueadas" rows={snapshot.licenses?.blockedWithLicense || []} columns={[['account', 'Cuenta'], ['licenses', 'Licencias', r => r.licenses.join(', ')]]} />
     </Panel>
-    <Panel title="Centros de costo" help="Centro de costo de TI (custodio en RIP_TIC) frente al de Talento Humano (nómina), comparado por su código numérico. Equivalencias: para cada código de obra que usa TI en las asignaciones, el centro de costo de nómina más común entre quienes tienen esos equipos.">
+    <Panel when={tab === 'proyectos'} title="Centros de costo" help="Centro de costo de TI (custodio en RIP_TIC) frente al de Talento Humano (nómina), comparado por su código numérico. Equivalencias: para cada código de obra que usa TI en las asignaciones, el centro de costo de nómina más común entre quienes tienen esos equipos.">
       <div className="hw-kpis hw-kpis-compact">
         <div><span>Coinciden</span><strong>{number(snapshot.costCenters?.counts?.coincide || 0)}</strong></div>
         <div><span>Distintos</span><strong>{number(snapshot.costCenters?.counts?.distinto || 0)}</strong></div>
@@ -416,7 +459,7 @@ export default function HardwarePage() {
       <Table title="Personas con centro de costo distinto o sin registro" filename="hardware-centros-costo" rows={(snapshot.costCenters?.people || []).filter(r => r.status !== 'coincide')} columns={[['name', 'Nombre'], ['area', 'Área'], ['thCode', 'Código TH'], ['thName', 'Centro de costo TH (nómina)'], ['tiCostCenter', 'Centro de costo TI (RIP_TIC)'], ['status', 'Estado', r => r.status === 'distinto' ? 'Distinto' : 'Sin registro en RIP_TIC'], ['equipment', 'Equipos']]} />
       <Table title="Equivalencias código de obra TI → centro de costo TH" filename="hardware-equivalencias" rows={snapshot.costCenters?.equivalences || []} columns={[['tiCode', 'Código TI'], ['tiName', 'Proyecto TI'], ['thProject', 'Centro de costo TH sugerido'], ['share', '% coincidencia', r => r.share + '%'], ['assignments', 'Asignaciones'], ['outsidePayroll', 'Fuera de nómina'], ['alternatives', 'Otros centros']]} />
     </Panel>
-    <Panel title="Cobertura" help="Cada persona aparece en el primer requisito que falla. Computadora: laptop o CPU vigente. El correo se busca primero en NominaGP y luego en custodios; Microsoft 365 se cruza por correo y alias.">
+    <Panel when={tab === 'personas'} title="Personal objetivo: computadora, correo y licencia" help="Cada persona aparece en el primer requisito que falla. Computadora: laptop o CPU vigente. El correo se busca primero en NominaGP y luego en custodios; Microsoft 365 se cruza por correo y alias.">
       <div className="hw-toolbar">
         <label>
           Área
@@ -438,7 +481,7 @@ export default function HardwarePage() {
         }} />
       <Table title="Personas objetivo" filename="hardware-cobertura" rows={selectedPeople.filter(p => !status || p.status === status)} columns={[['cedula', 'Cédula'], ['name', 'Nombre'], ['position', 'Cargo'], ['area', 'Área'], ['project', 'Proyecto', r => projectName(r.project)], ['email', 'Correo'], ['status', 'Estado', r => states[r.status]], ['licenses', 'Licencias', r => r.licenses.join(', ')], ['computers', 'Computadoras', r => r.computers.map(c => `${c.code} · ${c.type} ${c.brand || ''} ${c.model || ''} · ${c.year}`).join('; ')]]} />
     </Panel>
-    <Panel title="Calidad de datos">
+    <Panel when={tab === 'calidad'} title="Calidad de datos">
       <Table title="Equipos a recuperar · fuera de nómina" rows={quality.recoverEquipment.filter(i => ids.has(String(i.id)))} columns={equipmentColumns} />
       <Table title="Proyectos sin homologar" rows={quality.unmatchedProjects} columns={[['project', 'Proyecto RIP_TIC'], ['count', 'Equipos']]} />
       <Table title="Sin fecha de compra" rows={quality.withoutPurchaseDate.filter(i => ids.has(String(i.id)))} columns={equipmentColumns} />

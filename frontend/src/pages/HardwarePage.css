@@ -33,3 +33,25 @@
 .hw-kpis-compact { grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); margin: 8px 0 12px; }
 .hw-kpis-compact strong { font-size: 17px; }
 .hw-area-tabs { margin-bottom: 8px; flex-wrap: wrap; }
+
+/* Tablero ejecutivo: todo en una pantalla, detalle por pestañas */
+.hw-filters { position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 6px 0; border-bottom: 1px solid var(--border); }
+.hw-tabs { margin-right: auto; flex-wrap: wrap; }
+.hw-tabs .segmented-btn { padding: 6px 12px; font-size: 12px; }
+.hw-kpis-exec { grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 12px 0; }
+.hw-kpis-exec > div { background: var(--bg2); padding: 12px 14px; gap: 4px; }
+.hw-kpis-exec strong { font-size: 24px; line-height: 1.1; }
+.hw-kpis-exec small { color: var(--text-dim); font-size: 11px; }
+.hw-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.hw-card { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px 6px; min-width: 0; }
+.hw-card > header { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 2px; }
+.hw-card > header h3 { margin: 0; font-size: 13px; }
+.hw-card-link { background: none; border: 0; padding: 0; color: var(--accent); font: inherit; font-size: 11px; cursor: pointer; white-space: nowrap; }
+.hw-card-link:hover { text-decoration: underline; }
+.hw-card .hw-chart > h3:empty { display: none; }
+.hw-card .hw-tooltip { min-height: 14px; }
+@media (max-width: 1200px) { .hw-kpis-exec { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hw-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 700px) { .hw-kpis-exec, .hw-cards { grid-template-columns: 1fr; } }
+.hw-filters select { max-width: 190px; }
+.hw-filters label { font-size: 12px; color: var(--text-dim); }
+.hw-table-section small { margin-left: 6px; }
