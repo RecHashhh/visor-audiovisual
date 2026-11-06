@@ -141,8 +141,8 @@ export const api = {
     clearCachedByPrefixes(['projects', 'weeks:', 'files:'])
     return result
   },
-  getSasUrl:        (blobPath, minutes = 60) =>
-    apiFetch('/api/sas/generate', { method: 'POST', body: JSON.stringify({ blobPath, expiryMinutes: minutes }) }),
+  getSasUrl:        (blobPath, minutes = 60, download = null) =>
+    apiFetch('/api/sas/generate', { method: 'POST', body: JSON.stringify({ blobPath, expiryMinutes: minutes, ...(download ? { download: true, fileName: download } : {}) }) }),
   // Para reproducir video: si existe la copia liviana (_proxies/) entrega esa;
   // si no, el original. No usar para descargar.
   getPlaybackUrl:   (blobPath, minutes = 120) =>
