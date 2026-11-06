@@ -296,7 +296,7 @@ def make_sas_url_write(blob_path: str, expiry_minutes: int = 360) -> str:
         container_name=CONTAINER,
         blob_name=blob_path,
         account_key=ACCOUNT_KEY,
-        permission=BlobSasPermissions(write=True, create=True),
+        permission=BlobSasPermissions(write=True, create=True),  # write incluye metadata en Put Blob / Put Block List.
         expiry=expiry,
     )
     return f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER}/{blob_path}?{sas}"
@@ -3071,7 +3071,7 @@ def upload_local_plan(req: func.HttpRequest) -> func.HttpResponse:
     project_code = (body.get("projectCode") or "").strip()
     project_name = (body.get("projectName") or "").strip()
     prefijo      = (body.get("prefijo") or "FOT").strip().upper()
-    keep_names   = bool(body.get("keepNames"))
+    # Obra siempre organiza por semana; keepNames se ignora.
     files_in     = body.get("files") or []
     # Subcarpeta opcional dentro del proyecto (p. ej. "rio-guayllabamba"): las
     # rutas quedan proyecto/subcarpeta/semana/archivo.
@@ -3090,85 +3090,36 @@ def upload_local_plan(req: func.HttpRequest) -> func.HttpResponse:
         carpeta = uploader._resolve_carpeta(project_code, project_name)
         base = f"{carpeta}/{subfolder}" if subfolder else carpeta
         svc = get_blob_service()
-        blob_index = uploader.construir_blob_index(svc, prefix=f"{base}/")
-
-        def fecha_de(entry: Dict[str, Any]) -> datetime:
+        indice = uploader.construir_indice_origen(svc, prefix=f"{base}/")
+        def fecha_local(entry):
             texto = " | ".join(filter(None, [str(entry.get("relativePath") or ""), str(entry.get("name") or "")]))
             fecha = uploader.extraer_fecha_desde_texto(texto) or uploader.extraer_semana_desde_texto(texto)
             if fecha:
                 return fecha
             try:
-                lm = float(entry.get("lastModified") or 0) / 1000.0
-                if lm > 0:
-                    return datetime.fromtimestamp(lm, tz=timezone.utc)
-            except Exception:
+                modified = float(entry.get("lastModified") or 0) / 1000
+                if modified > 0:
+                    return datetime.fromtimestamp(modified, tz=timezone.utc)
+            except (ValueError, TypeError, OverflowError, OSError):
                 pass
             return datetime.now(timezone.utc)
 
-        entries = []
-        for i, f in enumerate(files_in):
-            if not isinstance(f, dict):
-                continue
-            name = os.path.basename(str(f.get("name") or "").strip())
-            if not name or name.startswith("."):
-                continue
-            entries.append({
-                "idx": i,
-                "name": name,
-                "size": int(f.get("size") or 0),
-                "lastModified": f.get("lastModified"),
-                "relativePath": str(f.get("relativePath") or "").strip(),
-                "fecha": fecha_de(f),
-            })
-
+        entries = [{"idx": i, "name": os.path.basename(str(f.get("name") or "").strip()),
+                    "size": int(f.get("size") or 0), "relativePath": str(f.get("relativePath") or "").strip(),
+                    "fecha": fecha_local(f)}
+                   for i, f in enumerate(files_in) if isinstance(f, dict)]
         entries.sort(key=lambda e: (e["fecha"], e["relativePath"], e["name"]))
-
-        contadores: Dict[str, int] = {}
-        planned = []
-        for e in entries:
-            ext = os.path.splitext(e["name"])[1].lower()
-
-            if keep_names:
-                # Modo biblioteca/sin fechas: respeta nombres y estructura de carpetas.
-                rel_dir = "/".join(
-                    s for s in (_sanitize_rel_segment(p) for p in e["relativePath"].split("/")[:-1]) if s
-                ) if e["relativePath"] else ""
-                folder = rel_dir or "General"
-                blob_path = f"{base}/{folder}/{e['name']}"
-                nombre_final = e["name"]
-            else:
-                pref = uploader.detectar_prefijo(e["name"], prefijo)
-                if pref == "SKIP":
-                    planned.append({
-                        "idx": e["idx"], "name": e["name"], "relativePath": e["relativePath"],
-                        "status": "omitido", "reason": "Tipo de archivo excluido (documentos/comprimidos)",
-                        "blobPath": None, "sasUrl": None,
-                    })
-                    continue
-                semana = uploader._numero_semana_iso(e["fecha"])
-                clave = f"{pref}_{e['fecha'].strftime('%Y%m%d')}"
-                contadores[clave] = contadores.get(clave, 0) + 1
-                nombre_final = uploader.renombrar_archivo(e["name"], e["fecha"], contadores[clave], prefijo)
-                blob_path = f"{base}/{semana}/{nombre_final}"
-
-            if blob_path in blob_index:
-                planned.append({
-                    "idx": e["idx"], "name": e["name"], "relativePath": e["relativePath"],
-                    "status": "existe", "blobPath": blob_path, "finalName": nombre_final,
-                    "sasUrl": None,
-                })
-            else:
-                planned.append({
-                    "idx": e["idx"], "name": e["name"], "relativePath": e["relativePath"],
-                    "status": "nuevo", "blobPath": blob_path, "finalName": nombre_final,
-                    "contentType": uploader.content_type_para(nombre_final),
-                    "sasUrl": make_sas_url_write(blob_path, expiry_minutes=360),
-                })
+        planned = uploader.planificar_obra(entries, base, prefijo, indice)
+        for entry in planned:
+            entry.pop("fecha", None)
+            entry["contentType"] = uploader.content_type_para(entry["finalName"])
+            entry["sasUrl"] = (make_sas_url_write(entry["blobPath"], expiry_minutes=360)
+                               if entry["status"] == "nuevo" else None)
 
         nuevos = sum(1 for p in planned if p["status"] == "nuevo")
         return ok({
             "carpeta": carpeta,
-            "keepNames": keep_names,
+            "keepNames": False,
             "total": len(planned),
             "nuevos": nuevos,
             "existentes": sum(1 for p in planned if p["status"] == "existe"),
@@ -3274,16 +3225,16 @@ def upload_remote_plan(req: func.HttpRequest) -> func.HttpResponse:
 
         carpeta = uploader._resolve_carpeta(project_code, project_name)
         base = f"{carpeta}/{subfolder}" if subfolder else carpeta
-        trabajos = uploader._preparar_trabajos(archivos, base, prefijo)
-        blob_index = uploader.construir_blob_index(get_blob_service(), prefix=f"{base}/")
+        indice = uploader.construir_indice_origen(get_blob_service(), prefix=f"{base}/")
+        trabajos = uploader._preparar_trabajos(archivos, base, prefijo, indice)
 
         files = []
         nuevos = existentes = total_bytes = 0
         for t in trabajos:
-            exists = t["blob_path"] in blob_index
+            exists = t["status"] == "existe"
             if exists:
                 existentes += 1
-            else:
+            elif t["status"] == "nuevo":
                 nuevos += 1
                 total_bytes += int(t.get("size_bytes") or 0)
             files.append({
@@ -3291,11 +3242,12 @@ def upload_remote_plan(req: func.HttpRequest) -> func.HttpResponse:
                 "blobPath": t["blob_path"], "dlUrl": t["dl_url"],
                 "driveId": t.get("drive_id"), "itemId": t.get("item_id"),
                 "size": int(t.get("size_bytes") or 0),
-                "status": "existe" if exists else "nuevo",
+                "status": t["status"], "metadata": t["metadata"], "reason": t.get("reason"),
             })
 
         return ok({
             "source": source, "carpeta": carpeta,
+            "omitidos": sum(f["status"] == "omitido" for f in files),
             "total": len(files), "nuevos": nuevos, "existentes": existentes,
             "totalBytesNuevos": total_bytes, "files": files,
         })
@@ -3305,7 +3257,7 @@ def upload_remote_plan(req: func.HttpRequest) -> func.HttpResponse:
 
 
 def _remote_copy_one(svc, token: str, drive_id: str, item_id: str, blob_path: str,
-                     dl_url: Optional[str] = None, refresh: bool = False):
+                     dl_url: Optional[str] = None, refresh: bool = False, metadata: Optional[dict] = None):
     """Lanza la COPIA servidor-a-servidor: ordena a Azure jalar los bytes directo
     desde SharePoint. Reusa la URL que ya trajo el Analizar (dl_url) para NO
     llamar a Graph por archivo (evita ráfagas → throttling). Solo pide una fresca
@@ -3317,7 +3269,24 @@ def _remote_copy_one(svc, token: str, drive_id: str, item_id: str, blob_path: st
         if not url:
             return "error", "No se pudo obtener la URL de descarga"
         bc = svc.get_blob_client(container=CONTAINER, blob=blob_path)
-        bc.start_copy_from_url(url)  # asíncrono: Azure copia en segundo plano
+        if metadata:
+            from azure.core import MatchConditions
+            from azure.core.exceptions import HttpResponseError
+            try:
+                bc.start_copy_from_url(url, metadata=metadata, etag="*", match_condition=MatchConditions.IfMissing)
+            except HttpResponseError as exc:
+                if exc.status_code not in (409, 412):
+                    raise
+                props = bc.get_blob_properties()
+                if props.metadata != metadata:
+                    return "error", "Destino ocupado por otro origen; vuelve a analizar los archivos"
+                estado = props.copy.status if props.copy else None
+                if estado in ("failed", "aborted"):
+                    bc.start_copy_from_url(url, metadata=metadata, etag=props.etag, match_condition=MatchConditions.IfNotModified)
+                else:
+                    return ("copiando" if estado == "pending" else "existe"), None
+        else:
+            bc.start_copy_from_url(url)
         return "copiando", None
     except Exception as exc:
         return "error", str(exc)
@@ -3331,11 +3300,14 @@ def _copy_status_counts(prefix: str, expected: set):
     svc = get_blob_service()
     cc = svc.get_container_client(CONTAINER)
     present = {}
+    errors = []
     for b in cc.list_blobs(name_starts_with=prefix, include=["copy", "metadata"]):
         if b.name not in expected or _is_dir_marker(b):
             continue
         try:
             present[b.name] = b.copy.status if b.copy else None
+            if present[b.name] in ("failed", "aborted"):
+                errors.append({"blobPath": b.name, "error": getattr(b.copy, "status_description", None) or "La copia falló"})
         except Exception:
             present[b.name] = None
     done = pending = failed = 0
@@ -3354,10 +3326,10 @@ def _copy_status_counts(prefix: str, expected: set):
                 done += 1
     return {"total": len(expected), "done": done, "pending": pending,
             "failed": failed, "missing": len(not_done) - failed,
-            "notDone": not_done[:3000]}
+            "notDone": not_done[:3000], "errors": errors}
 
 
-def _remote_transfer_one(svc, token: str, dl_url: str, blob_path: str, name: str):
+def _remote_transfer_one(svc, token: str, dl_url: str, blob_path: str, name: str, metadata: Optional[dict] = None):
     """Descarga de Graph a tempfile y sube al blob. Devuelve (status, error)."""
     tmp_path = None
     try:
@@ -3376,9 +3348,10 @@ def _remote_transfer_one(svc, token: str, dl_url: str, blob_path: str, name: str
             uploader._subir_a_blob_desde_path(
                 svc, tmp_path, blob_path,
                 content_type=uploader.content_type_para(name),
+                metadata=metadata or uploader.metadata_origen(name, os.path.getsize(tmp_path)),
             )
         except ResourceExistsError:
-            return "existe", None
+            return "error", "Destino ocupado durante la subida; vuelve a analizar los archivos"
         return "ok", None
     except Exception as exc:
         return "error", str(exc)
@@ -3423,7 +3396,7 @@ def upload_remote_batch(req: func.HttpRequest) -> func.HttpResponse:
     try:
         svc = get_blob_service()
         token = uploader._get_graph_token()
-        results, processed = _issue_copies(svc, token, items, prefix_ok, budget, refresh=bool(body.get('refresh')))
+        results, processed = _issue_copies(svc, token, items, prefix_ok, budget, refresh=bool(body.get('refresh')), require_origin=True)
         clear_index_related_cache()
         return ok({
             "processed": processed, "total": len(items),
@@ -3434,7 +3407,7 @@ def upload_remote_batch(req: func.HttpRequest) -> func.HttpResponse:
         return err(str(exc), 500)
 
 
-def _issue_copies(svc, token, items, prefix_ok, budget, refresh=False):
+def _issue_copies(svc, token, items, prefix_ok, budget, refresh=False, require_origin=False):
     """Lanza las copias de una tanda (rápido: solo emite órdenes). Devuelve
     (results, processed). El estado real se consulta luego con copy-status.
     `refresh`: pide URL fresca a Graph (para reintentos, si la anterior caducó)."""
@@ -3448,11 +3421,21 @@ def _issue_copies(svc, token, items, prefix_ok, budget, refresh=False):
         drive_id  = str((it or {}).get("driveId") or "")
         item_id   = str((it or {}).get("itemId") or "")
         dl_url    = (it or {}).get("dlUrl")
+        metadata = (it or {}).get("metadata")
+        if require_origin:
+            try:
+                metadata = uploader.metadata_origen(unquote(metadata["srcname"]), int(metadata["srcsize"]))
+                if not metadata["srcname"] or int(metadata["srcsize"]) < 0:
+                    raise ValueError("Origen inválido")
+            except (KeyError, TypeError, ValueError):
+                results.append({"blobPath": blob_path, "status": "error", "error": "Falta metadata de origen válida; vuelve a analizar"})
+                processed += 1
+                continue
         if not blob_path.startswith(prefix_ok) or not drive_id or not item_id:
             results.append({"blobPath": blob_path, "status": "error", "error": "Ruta u origen no válidos"})
             processed += 1
             continue
-        status, error = _remote_copy_one(svc, token, drive_id, item_id, blob_path, dl_url=dl_url, refresh=refresh)
+        status, error = _remote_copy_one(svc, token, drive_id, item_id, blob_path, dl_url=dl_url, refresh=refresh, metadata=metadata)
         results.append({"blobPath": blob_path, "status": status, "error": error})
         processed += 1
     return results, processed
@@ -3534,7 +3517,7 @@ def upload_remote_list(req: func.HttpRequest) -> func.HttpResponse:
             # Primera llamada: resolver el origen y sembrar la raíz.
             _, base_drive, src_folder = _remote_media_source(body, token)
             pending = [[uploader.children_url(base_drive, src_folder), ""]]
-        files, remaining = uploader.list_drive_tree_budgeted(token, pending, budget)
+        files, remaining = uploader.list_drive_tree_budgeted(token, pending, budget, recursive=body.get("recursive", True))
         return ok({
             "files": files, "found": len(files),
             "cursor": {"pending": remaining}, "done": len(remaining) == 0,
@@ -3616,26 +3599,29 @@ def upload_remote_prepare(req: func.HttpRequest) -> func.HttpResponse:
             "name": f.get("name", ""), "size": int(f.get("size") or 0),
             "id": f.get("itemId"), "parentReference": {"driveId": f.get("driveId")},
             "lastModifiedDateTime": f.get("lastModified"),
+            "relativePath": f.get("relDir", ""),
         } for f in files_in]
-        trabajos = uploader._preparar_trabajos(items, base, prefijo)
-        blob_index = uploader.construir_blob_index(get_blob_service(), prefix=f"{base}/")
+        indice = uploader.construir_indice_origen(get_blob_service(), prefix=f"{base}/")
+        trabajos = uploader._preparar_trabajos(items, base, prefijo, indice)
         dl_by_item = {f.get("itemId"): f.get("downloadUrl") for f in files_in}
         files = []
         nuevos = existentes = total_bytes = 0
         for t in trabajos:
-            exists = t["blob_path"] in blob_index
+            exists = t["status"] == "existe"
             if exists:
                 existentes += 1
-            else:
+            elif t["status"] == "nuevo":
                 nuevos += 1
                 total_bytes += int(t.get("size_bytes") or 0)
             files.append({
                 "orig": t["nombre_orig"], "name": t["nombre_nuevo"], "blobPath": t["blob_path"],
                 "driveId": t.get("drive_id"), "itemId": t.get("item_id"),
                 "dlUrl": dl_by_item.get(t.get("item_id")),
-                "size": int(t.get("size_bytes") or 0), "status": "existe" if exists else "nuevo",
+                "size": int(t.get("size_bytes") or 0), "status": t["status"],
+                "metadata": t["metadata"], "reason": t.get("reason"),
             })
         return ok({"total": len(files), "nuevos": nuevos, "existentes": existentes,
+                   "omitidos": sum(f["status"] == "omitido" for f in files),
                    "totalBytesNuevos": total_bytes, "files": files})
     except Exception as exc:
         logging.error("upload_remote_prepare: %s", exc)

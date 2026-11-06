@@ -36,6 +36,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
+from urllib.parse import quote, unquote
 
 import msal
 import requests
@@ -417,6 +418,7 @@ def list_drive_tree_budgeted(
     token: str,
     pending: List[list],
     budget_s: float = 120.0,
+    recursive: bool = True,
 ) -> Tuple[List[dict], List[list]]:
     """Recorre el árbol de carpetas por LOTES acotados en tiempo, para que el
     'Analizar' de la web no choque con el timeout HTTP aunque Graph throttlee.
@@ -453,7 +455,7 @@ def list_drive_tree_budgeted(
                     # copia falla y el reintento pide una fresca solo para esa.
                     "downloadUrl": item.get("@microsoft.graph.downloadUrl"),
                 })
-            elif "folder" in item:
+            elif recursive and "folder" in item:
                 did = item.get("parentReference", {}).get("driveId")
                 iid = item.get("id")
                 if did and iid:
@@ -479,6 +481,100 @@ def construir_blob_index(blob_svc: BlobServiceClient, prefix: str = "") -> set:
     index = {blob.name for blob in container.list_blobs(name_starts_with=prefix)}
     log.info("Blob index: %s blobs existentes (prefijo: '%s')", len(index), prefix or "/")
     return index
+
+
+def metadata_origen(nombre: str, size: int) -> dict:
+    nombre = str(nombre).replace("\\", "/").rsplit("/", 1)[-1]
+    return {"srcname": quote(nombre, safe=""), "srcsize": str(int(size))}
+
+
+def clave_origen(nombre: str, size: int) -> tuple:
+    return (str(nombre).replace("\\", "/").rsplit("/", 1)[-1].lower(), int(size))
+
+
+def construir_indice_origen(blob_svc: BlobServiceClient, prefix: str = "") -> dict:
+    """Un listado con metadata; conserva también las rutas sin origen para compatibilidad."""
+    indice = {"rutas": {}, "origenes": set(), "rutas_origen": {}, "con_origen": set(), "maximos": {}}
+    container = blob_svc.get_container_client(CONTAINER_NAME)
+    for blob in container.list_blobs(name_starts_with=prefix, include=["metadata"]):
+        indice["rutas"][blob.name] = blob.size
+        meta = blob.metadata or {}
+        if "srcname" in meta or "srcsize" in meta:
+            indice["con_origen"].add(blob.name)
+        if "srcname" in meta and "srcsize" in meta:
+            try:
+                clave = clave_origen(unquote(meta["srcname"]), int(meta["srcsize"]))
+                # Una copia fallida no constituye un archivo ya subido.
+                copia = getattr(blob, "copy", None)
+                estado = getattr(copia, "status", None) if copia else None
+                if estado not in ("failed", "aborted"):
+                    indice["origenes"].add(clave)
+                    indice["rutas_origen"][clave] = blob.name
+            except (ValueError, TypeError):
+                pass
+        match = re.match(r"^([A-Z0-9]+)_(\d{8})_(\d{3,})\.", blob.name.rsplit("/", 1)[-1])
+        if match:
+            clave = f"{match[1]}_{match[2]}"
+            indice["maximos"][clave] = max(indice["maximos"].get(clave, 0), int(match[3]))
+    return indice
+
+
+def planificar_obra(archivos: List[dict], base: str, prefijo_jpg: str, indice: dict) -> List[dict]:
+    """Plan puro común a navegador, copias remotas y motor de subida."""
+    rutas = indice["rutas"]
+    maximos = dict(indice["maximos"])
+    vistos, asignados = set(), set()
+    plan = []
+    # Ruta «antigua» = la que el planificador anterior habría dado: fecha sin
+    # mirar la carpeta en orígenes remotos (relativePath es nuevo) y contador
+    # desde 1 por tanda. Sirve para reconocer lo ya migrado sin metadata.
+    def fecha_antigua(item):
+        return item["fecha"] if item.get("fecha") else inferir_fecha({k: v for k, v in item.items() if k != "relativePath"})
+    contadores, antiguas = {}, {}
+    for item in sorted(archivos, key=fecha_antigua):
+        nombre = item.get("name", "")
+        prefijo = detectar_prefijo(nombre, prefijo_jpg)
+        if not nombre or nombre.startswith(".") or prefijo == "SKIP":
+            continue
+        fecha = fecha_antigua(item)
+        clave = f"{prefijo}_{fecha.strftime('%Y%m%d')}"
+        contadores[clave] = contadores.get(clave, 0) + 1
+        antiguas[id(item)] = f"{base}/{_numero_semana_iso(fecha)}/{renombrar_archivo(nombre, fecha, contadores[clave], prefijo_jpg)}"
+    ordenados = sorted(archivos, key=inferir_fecha)
+    for item in ordenados:
+        nombre = item.get("name", "")
+        size = int(item.get("size") or 0)
+        entry = {**item, "metadata": metadata_origen(nombre, size), "blobPath": None, "finalName": nombre}
+        prefijo = detectar_prefijo(nombre, prefijo_jpg)
+        if not nombre or nombre.startswith(".") or prefijo == "SKIP":
+            plan.append({**entry, "status": "omitido", "reason": "Tipo de archivo excluido"})
+            continue
+        fecha = inferir_fecha(item)
+        clave = f"{prefijo}_{fecha.strftime('%Y%m%d')}"
+        origen = clave_origen(nombre, size)
+        if origen in vistos:
+            plan.append({**entry, "status": "omitido", "reason": "Origen duplicado en esta tanda"})
+            continue
+        vistos.add(origen)
+        ruta_antigua = antiguas[id(item)]
+        if origen in indice["origenes"]:
+            ruta = indice.get("rutas_origen", {}).get(origen, ruta_antigua)
+            status = "existe"
+        elif ruta_antigua in rutas and ruta_antigua not in indice["con_origen"] and rutas[ruta_antigua] == size:
+            ruta, status = ruta_antigua, "existe"
+        else:
+            seq = maximos.get(clave, 0) + 1
+            while True:
+                nuevo = renombrar_archivo(nombre, fecha, seq, prefijo_jpg)
+                ruta = f"{base}/{_numero_semana_iso(fecha)}/{nuevo}"
+                if ruta not in rutas and ruta not in asignados:
+                    break
+                seq += 1
+            maximos[clave] = seq
+            asignados.add(ruta)
+            status = "nuevo"
+        plan.append({**entry, "status": status, "blobPath": ruta, "finalName": ruta.rsplit("/", 1)[-1]})
+    return plan
 
 
 # ════════════════════════════════════════════════════════════════════════════
@@ -570,8 +666,10 @@ def _ruta_humana_item(item: dict) -> str:
 
 
 def inferir_fecha(item: dict) -> datetime:
+    if item.get("fecha"):
+        return item["fecha"]
     nombre = item.get("name", "")
-    ruta = _ruta_humana_item(item)
+    ruta = item.get("relativePath") or _ruta_humana_item(item)
 
     fecha = extraer_fecha_desde_texto(nombre) or extraer_semana_desde_texto(nombre)
     if not fecha:
@@ -579,6 +677,9 @@ def inferir_fecha(item: dict) -> datetime:
         fecha = extraer_fecha_desde_texto(texto) or extraer_semana_desde_texto(texto)
     if fecha:
         return fecha
+
+    if isinstance(item.get("lastModified"), (int, float)) and item["lastModified"] > 0:
+        return datetime.fromtimestamp(item["lastModified"] / 1000, tz=timezone.utc)
 
     file_info = item.get("fileSystemInfo", {})
     created = file_info.get("createdDateTime") or item.get("lastModifiedDateTime")
@@ -671,6 +772,7 @@ def _subir_a_blob_desde_path(
     content_type: str = "application/octet-stream",
     tier: StandardBlobTier = StandardBlobTier.COOL,
     max_concurrency: int = 8,
+    metadata: Optional[dict] = None,
 ) -> None:
     container = blob_svc.get_container_client(CONTAINER_NAME)
     with open(local_path, "rb") as contenido:
@@ -678,6 +780,7 @@ def _subir_a_blob_desde_path(
             name=blob_path,
             data=contenido,
             overwrite=False,
+            metadata=metadata,
             standard_blob_tier=tier,
             max_concurrency=max_concurrency,
             content_settings=ContentSettings(content_type=content_type),
@@ -692,52 +795,22 @@ def _preparar_trabajos(
     archivos: List[dict],
     carpeta_proyecto: str,
     prefijo_jpg: str,
+    indice: Optional[dict] = None,
 ) -> List[dict]:
-    contadores: Dict[str, int] = {}
-    trabajos: List[dict] = []
-
-    archivos_ordenados = sorted(archivos, key=inferir_fecha)
-    for item in archivos_ordenados:
-        nombre_orig = item.get("name", "")
-        ext = Path(nombre_orig).suffix.lower()
-
-        if ext in SKIP_EXTENSIONS:
-            continue
-
-        fecha = inferir_fecha(item)
-        semana = _numero_semana_iso(fecha)
-        prefijo = detectar_prefijo(nombre_orig, prefijo_jpg)
-
-        if prefijo == "SKIP":
-            continue
-
-        clave = f"{prefijo}_{fecha.strftime('%Y%m%d')}"
-        contadores[clave] = contadores.get(clave, 0) + 1
-        seq = contadores[clave]
-
-        nombre_nuevo = renombrar_archivo(nombre_orig, fecha, seq, prefijo_jpg)
-        blob_path = f"{carpeta_proyecto}/{semana}/{nombre_nuevo}"
-
+    trabajos = []
+    indice = indice if indice is not None else {"rutas": {}, "origenes": set(), "con_origen": set(), "maximos": {}}
+    for item in planificar_obra(archivos, carpeta_proyecto, prefijo_jpg, indice):
         drive_id = item.get("parentReference", {}).get("driveId")
         item_id = item.get("id")
-        dl_url = (
-            f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
-            if drive_id and item_id
-            else item.get("@microsoft.graph.downloadUrl")
-        )
-
-        if not dl_url:
-            log.warning("No se pudo determinar URL de descarga para %s", nombre_orig)
-            continue
-
+        dl_url = (f"{GRAPH_BASE}/drives/{drive_id}/items/{item_id}/content"
+                  if drive_id and item_id else item.get("@microsoft.graph.downloadUrl"))
+        if not dl_url and item["status"] == "nuevo":
+            item.update(status="omitido", reason="Sin URL de descarga")
         trabajos.append({
-            "nombre_orig": nombre_orig,
-            "nombre_nuevo": nombre_nuevo,
-            "blob_path": blob_path,
-            "dl_url": dl_url,
-            "drive_id": drive_id,
-            "item_id": item_id,
-            "size_bytes": item.get("size", 0),
+            "nombre_orig": item["name"], "nombre_nuevo": item["finalName"],
+            "blob_path": item["blobPath"], "dl_url": dl_url,
+            "drive_id": drive_id, "item_id": item_id, "size_bytes": item.get("size", 0),
+            "metadata": item["metadata"], "status": item["status"], "reason": item.get("reason"),
         })
 
     return trabajos
@@ -803,13 +876,10 @@ def _procesar_un_trabajo(
                     trabajo["blob_path"],
                     content_type=content_type_para(trabajo["nombre_nuevo"]),
                     max_concurrency=upload_concurrency,
+                    metadata=trabajo["metadata"],
                 )
             except ResourceExistsError:
-                # Carrera con otra subida simultánea: ya existe, es un skip, no un error
-                log.info("  ⏭️  Ya existía (carrera): %s", trabajo["blob_path"])
-                if progress_cb:
-                    progress_cb(idx, "skipped", {"name": trabajo["nombre_nuevo"], "blob": trabajo["blob_path"]})
-                return "skipped", trabajo["blob_path"]
+                raise RuntimeError(f"Destino ocupado durante la subida; vuelve a analizar: {trabajo['blob_path']}")
             t_ul = time.perf_counter() - t_ul_ini
             t_total = time.perf_counter() - t0
 
@@ -871,15 +941,15 @@ def procesar_archivos(
         "dl_mbps_prom": 0.0, "ul_mbps_prom": 0.0, "eff_mbps_prom": 0.0,
     }
 
-    blob_index = construir_blob_index(blob_svc, prefix=carpeta_proyecto)
-    trabajos = _preparar_trabajos(archivos, carpeta_proyecto, prefijo_jpg)
+    indice = construir_indice_origen(blob_svc, prefix=f"{carpeta_proyecto}/")
+    trabajos = _preparar_trabajos(archivos, carpeta_proyecto, prefijo_jpg, indice)
 
     if not trabajos:
         log.info("Sin archivos para procesar en %s", carpeta_proyecto)
         return resumen
 
-    nuevos = [t for t in trabajos if t["blob_path"] not in blob_index]
-    ya_existentes = [t for t in trabajos if t["blob_path"] in blob_index]
+    nuevos = [t for t in trabajos if t["status"] == "nuevo"]
+    ya_existentes = [t for t in trabajos if t["status"] != "nuevo"]
 
     resumen["omitidos"] = len(ya_existentes)
     if ya_existentes:
@@ -1204,7 +1274,9 @@ def _upload_file_in_blocks(
     content_type: str,
     progress_cb: Optional[Callable] = None,
     idx: int = -1,
+    metadata: Optional[dict] = None,
 ) -> None:
+    from azure.core import MatchConditions
     from azure.storage.blob import BlobBlock
     blob_client = container.get_blob_client(blob_path)
     block_ids: List[str] = []
@@ -1236,7 +1308,9 @@ def _upload_file_in_blocks(
                 progress_cb(idx, "uploading", {"uploaded": uploaded})
 
     blob_client.commit_block_list(
-        [BlobBlock(id=b) for b in block_ids],
+        [BlobBlock(b) for b in block_ids],
+        metadata=metadata,
+        etag="*", match_condition=MatchConditions.IfMissing,
         content_settings=ContentSettings(content_type=content_type),
     )
 
@@ -1249,52 +1323,9 @@ def upload_urls(
     prefijo: Optional[str] = None,
     max_workers: int = 4,
 ) -> Dict[str, Any]:
-    """Descarga cada URL y la sube al container. Retorna resumen."""
-    week = _week_iso_for_date()
-    carpeta = _resolve_carpeta(project_code, project_name)
-
-    results: Dict[str, Any] = {"uploaded": 0, "skipped": 0, "errors": [], "details": []}
-
-    container = blob_svc.get_container_client(CONTAINER_NAME)
-    blob_index = construir_blob_index(blob_svc, prefix=carpeta)
-
-    def _worker(url: str) -> Dict[str, Any]:
-        tmp_path = None
-        try:
-            download_url, name = _resolve_download_url(url)
-            blob_path = f"{carpeta}/{week}/{name}"
-            if blob_path in blob_index:
-                return {"url": url, "ok": False, "skipped": True, "blob": blob_path}
-
-            with tempfile.NamedTemporaryFile(delete=False) as tmpf:
-                tmp_path = tmpf.name
-            name, ct, downloaded = _download_stream_to_tempfile(download_url, name, tmp_path)
-            _upload_file_in_blocks(container, blob_path, tmp_path, ct)
-            return {"url": url, "ok": True, "blob": blob_path, "size": downloaded}
-        except Exception as e:
-            log.exception("upload_urls: %s", e)
-            return {"url": url, "ok": False, "error": str(e)}
-        finally:
-            if tmp_path:
-                try:
-                    os.remove(tmp_path)
-                except Exception:
-                    pass
-
-    workers = max(1, min(max_workers, len(urls)))
-    with ThreadPoolExecutor(max_workers=workers) as ex:
-        futures = {ex.submit(_worker, u): u for u in urls}
-        for fut in as_completed(futures):
-            res = fut.result()
-            results["details"].append(res)
-            if res.get("ok"):
-                results["uploaded"] += 1
-            elif res.get("skipped"):
-                results["skipped"] += 1
-            else:
-                results["errors"].append(res)
-
-    return results
+    """Descarga y planifica con el mismo motor que la variante con progreso."""
+    return upload_urls_with_progress(blob_svc, project_code, project_name, urls,
+                                     lambda *args: None, prefijo, max_workers)
 
 
 def upload_urls_with_progress(
@@ -1312,35 +1343,44 @@ def upload_urls_with_progress(
     progress_cb(file_index: int, event: str, payload: dict)
     Eventos: 'queued', 'downloading', 'downloaded', 'uploading', 'uploaded', 'error', 'finished'
     """
-    week = _week_iso_for_date()
     carpeta = _resolve_carpeta(project_code, project_name)
 
     results: Dict[str, Any] = {"uploaded": 0, "skipped": 0, "errors": [], "details": []}
 
     container = blob_svc.get_container_client(CONTAINER_NAME)
-    blob_index = construir_blob_index(blob_svc, prefix=carpeta)
+    indice = construir_indice_origen(blob_svc, prefix=f"{carpeta}/")
+    plan_lock = threading.Lock()
 
     def _worker(idx: int, url: str) -> Dict[str, Any]:
         progress_cb(idx, "queued", {"url": url})
         name = _guess_filename_from_url(url)
         tmp_path = None
         try:
-            # Resolver UNA sola vez (nombre + URL real de descarga) y verificar
-            # existencia ANTES de descargar: no bajamos gigas para luego omitir.
             download_url, name = _resolve_download_url(url)
-            blob_path = f"{carpeta}/{week}/{name}"
-            if blob_path in blob_index:
-                progress_cb(idx, "skipped", {"name": name, "blob": blob_path})
-                return {"url": url, "ok": False, "skipped": True, "blob": blob_path}
-
             with tempfile.NamedTemporaryFile(delete=False) as tmpf:
                 tmp_path = tmpf.name
             name, ct, downloaded = _download_stream_to_tempfile(download_url, name, tmp_path, progress_cb, idx)
             progress_cb(idx, "downloaded", {"name": name, "size": downloaded})
 
-            progress_cb(idx, "uploading", {"name": name, "size": downloaded})
-            _upload_file_in_blocks(container, blob_path, tmp_path, ct, progress_cb, idx)
-            progress_cb(idx, "uploaded", {"name": name, "blob": blob_path, "size": downloaded})
+            # El tamaño real se conoce al terminar la descarga. Reserva bajo lock
+            # para que dos workers no asignen la misma secuencia.
+            with plan_lock:
+                planned, = planificar_obra([{"name": name, "size": downloaded}], carpeta, prefijo or "FOT", indice)
+                blob_path = planned["blobPath"]
+                if planned["status"] == "nuevo":
+                    indice["rutas"][blob_path] = downloaded
+                    indice["con_origen"].add(blob_path)
+                    origen = clave_origen(name, downloaded)
+                    indice["origenes"].add(origen)
+                    indice["rutas_origen"][origen] = blob_path
+                    match = re.match(r"^([A-Z0-9]+_\d{8})_(\d{3,})\.", planned["finalName"])
+                    indice["maximos"][match[1]] = int(match[2])
+            if planned["status"] != "nuevo":
+                progress_cb(idx, "skipped", {"name": name, "blob": blob_path, "reason": planned.get("reason")})
+                return {"url": url, "ok": False, "skipped": True, "blob": blob_path}
+            progress_cb(idx, "uploading", {"name": planned["finalName"], "size": downloaded})
+            _upload_file_in_blocks(container, blob_path, tmp_path, ct, progress_cb, idx, metadata=planned["metadata"])
+            progress_cb(idx, "uploaded", {"name": planned["finalName"], "blob": blob_path, "size": downloaded})
             return {"url": url, "ok": True, "blob": blob_path, "size": downloaded}
 
         except Exception as e:

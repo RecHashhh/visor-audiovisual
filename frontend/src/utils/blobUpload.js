@@ -41,17 +41,18 @@ async function withRetries(fn, label) {
   throw new Error(`${label}: ${lastErr?.message || lastErr}`)
 }
 
-async function putSingle(sasUrl, file, contentType, onProgress) {
+async function putSingle(sasUrl, file, contentType, onProgress, metadata) {
   await withRetries(
     () => xhrPut(sasUrl, file, {
       'x-ms-blob-type': 'BlockBlob',
       'Content-Type': contentType || 'application/octet-stream',
+      ...metadataHeaders(metadata),
     }, onProgress),
     'Subida directa'
   )
 }
 
-async function putBlocks(sasUrl, file, contentType, onProgress) {
+async function putBlocks(sasUrl, file, contentType, onProgress, metadata) {
   const totalBlocks = Math.ceil(file.size / BLOCK_SIZE)
   const blockIds = []
 
@@ -77,14 +78,19 @@ async function putBlocks(sasUrl, file, contentType, onProgress) {
     () => xhrPut(`${sasUrl}&comp=blocklist`, xml, {
       'Content-Type': 'application/xml',
       'x-ms-blob-content-type': contentType || 'application/octet-stream',
+      ...metadataHeaders(metadata),
     }),
     'Confirmación de bloques'
   )
 }
 
-export async function uploadFileToBlob(sasUrl, file, contentType, onProgress) {
+function metadataHeaders(metadata) {
+  return metadata ? { 'x-ms-meta-srcname': metadata.srcname, 'x-ms-meta-srcsize': metadata.srcsize, 'If-None-Match': '*' } : {}
+}
+
+export async function uploadFileToBlob(sasUrl, file, contentType, onProgress, metadata) {
   if (file.size <= SINGLE_PUT_MAX) {
-    return putSingle(sasUrl, file, contentType, onProgress)
+    return putSingle(sasUrl, file, contentType, onProgress, metadata)
   }
-  return putBlocks(sasUrl, file, contentType, onProgress)
+  return putBlocks(sasUrl, file, contentType, onProgress, metadata)
 }

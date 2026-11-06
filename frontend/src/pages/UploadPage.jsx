@@ -37,6 +37,49 @@ function fmtEta(sec) {
   return `~${h} h ${m % 60} min`
 }
 
+function useUploadLog() {
+  const [lines, setLines] = useState([])
+  const started = useRef(Date.now())
+  function add(message, error = false) {
+    const time = new Date().toLocaleTimeString('es-EC', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    const messages = Array.isArray(message) ? message : [message]
+    setLines(previous => [...previous, ...messages.map(text => ({ text: `${time} ${text}`, error }))])
+  }
+  function reset() { setLines([]); started.current = Date.now() }
+  function finish(uploaded, skipped, errors) {
+    add(`Listo: ${uploaded} subidos · ${skipped} omitidos · ${errors} errores · ${Math.round((Date.now() - started.current) / 1000)} s`, errors > 0)
+  }
+  return { lines, add, reset, finish }
+}
+
+function logPlan(log, plan) {
+  log.add(`Plan: ${plan.nuevos} nuevos · ${plan.existentes} ya existían · ${plan.omitidos || 0} omitidos`)
+  if (plan.files.length > 300) {
+    log.add(`${plan.files.length} archivos planificados; detalle resumido por volumen.`)
+  } else {
+    log.add(plan.files.map(f => `${f.orig || f.name} → ${f.finalName || f.name} (${((f.size || 0) / 1024 / 1024).toFixed(1)} MB) · ${f.status}${f.reason ? `: ${f.reason}` : ''}`))
+  }
+}
+
+function UploadLog({ lines }) {
+  const scroll = useRef(null)
+  const [copyMessage, setCopyMessage] = useState('')
+  useEffect(() => { if (scroll.current) scroll.current.scrollTop = scroll.current.scrollHeight }, [lines])
+  if (!lines.length) return null
+  async function copy() {
+    try { await navigator.clipboard.writeText(lines.map(l => l.text).join('\n')); setCopyMessage('Registro copiado') }
+    catch { setCopyMessage('No se pudo copiar el registro') }
+  }
+  return (
+    <div className="uplog-panel">
+      <div className="uplog-toolbar"><span>Registro de carga</span><button type="button" className="up-btn-ghost" onClick={copy}>Copiar registro</button><span role="status">{copyMessage}</span></div>
+      <div className="uplog-lines" ref={scroll} role="log" aria-label="Registro de carga">
+        {lines.slice(-200).map((line, i) => <div key={lines.length - Math.min(200, lines.length) + i} className={line.error ? 'uplog-error' : ''}>{line.text}</div>)}
+      </div>
+    </div>
+  )
+}
+
 export default function UploadPage() {
   const { me } = useAuthz()
   const [destination, setDestination] = useState('proyecto') // 'proyecto' | 'biblioteca'
@@ -87,7 +130,6 @@ function ProjectUpload() {
   const [newName, setNewName] = useState('')
 
   const [prefijo, setPrefijo] = useState('FOT')
-  const [keepNames, setKeepNames] = useState(false)
   const [refreshIndex, setRefreshIndex] = useState(true)
   const [recursive, setRecursive] = useState(true)
 
@@ -198,7 +240,7 @@ function ProjectUpload() {
           <div className="up-row3">
             <div>
               <label className="up-right-label">Prefijo</label>
-              <select className="up-right-select" value={prefijo} disabled={keepNames} onChange={e => setPrefijo(e.target.value)}>
+              <select className="up-right-select" value={prefijo} onChange={e => setPrefijo(e.target.value)}>
                 {PREFIJOS.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
             </div>
@@ -238,7 +280,7 @@ function ProjectUpload() {
 
           {source === 'local' && (
             <LocalSource projectCode={activeCode} projectName={activeName} prefijo={prefijo} subfolder={subfolder}
-              keepNames={keepNames} setKeepNames={setKeepNames} refreshIndex={refreshIndex} ready={ready} />
+              refreshIndex={refreshIndex} ready={ready} />
           )}
           {(source === 'sharepoint' || source === 'onedrive') && (
             <RemoteSource source={source} projectCode={activeCode} projectName={activeName} prefijo={prefijo} subfolder={subfolder}
@@ -251,7 +293,9 @@ function ProjectUpload() {
 }
 
 /* ── Fuente: Mi equipo (directo navegador→blob) ── */
-function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, setKeepNames, refreshIndex, ready }) {
+function LocalSource({ projectCode, projectName, prefijo, subfolder, refreshIndex, ready }) {
+  const log = useUploadLog()
+  const [stage, setStage] = useState('')
   const [files, setFiles] = useState([])
   const [rows, setRows] = useState([])
   const [busy, setBusy] = useState(false)
@@ -273,24 +317,28 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
     if (!ready) { setMsg({ ok: false, text: 'Elige un proyecto primero.' }); return }
     if (!files.length) return
     setBusy(true); setMsg(null)
+    log.reset(); log.add('Comparando con lo ya subido…'); setStage('Analizando…')
     try {
       const plan = await api.postUploadLocalPlan({
-        projectCode, projectName, prefijo, keepNames, subfolder,
+        projectCode, projectName, prefijo, subfolder,
         files: files.map(({ name, size, lastModified, relativePath }) => ({ name, size, lastModified, relativePath })),
       })
+      logPlan(log, plan)
+      if (!plan.nuevos) log.finish(0, plan.existentes + (plan.omitidos || 0), 0)
       setRows(plan.files.map((p) => ({
         srcIdx: p.idx, name: p.relativePath || p.name, blob: p.blobPath,
-        status: p.status, error: p.reason || null, sasUrl: p.sasUrl, contentType: p.contentType,
+        status: p.status, error: p.reason || null, sasUrl: p.sasUrl, contentType: p.contentType, metadata: p.metadata,
         include: p.status === 'nuevo', total: files[p.idx]?.size || 0, done: 0,
       })))
-    } catch (e) { setMsg({ ok: false, text: `Error al analizar: ${e.message}` }) }
-    finally { setBusy(false) }
+    } catch (e) { log.add(`Error al analizar: ${e.message}`, true); setMsg({ ok: false, text: `Error al analizar: ${e.message}` }) }
+    finally { setBusy(false); setStage('') }
   }
 
   async function start() {
     const todo = rows.filter(r => r.include && r.sasUrl && (r.status === 'nuevo' || r.status === 'error'))
     if (!todo.length) { setMsg({ ok: false, text: 'No hay archivos nuevos seleccionados. Analiza primero.' }); return }
     setBusy(true); setMsg(null)
+    setStage('Subiendo…'); log.add(`Subiendo… 0/${todo.length}`)
     const patch = (blob, p) => setRows(rs => rs.map(r => (r.blob === blob ? { ...r, ...p } : r)))
 
     const totalBytes = todo.reduce((s, r) => s + (r.total || 0), 0)
@@ -312,18 +360,20 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
       while (queue.length) {
         const row = queue.shift()
         const src = files[row.srcIdx]
-        if (!src?.file) { fail++; setStats(s => s && { ...s, fail: s.fail + 1 }); patch(row.blob, { status: 'error', error: 'Archivo no disponible' }); continue }
+        if (!src?.file) { fail++; log.add(`${row.name}: Archivo no disponible`, true); setStats(s => s && { ...s, fail: s.fail + 1 }); patch(row.blob, { status: 'error', error: 'Archivo no disponible' }); continue }
         patch(row.blob, { status: 'subiendo', done: 0, error: null })
         try {
           await uploadFileToBlob(row.sasUrl, src.file, row.contentType, loaded => {
             loadedRef.current[row.blob] = loaded
             patch(row.blob, { done: loaded })
-          })
+          }, row.metadata)
           ok++; loadedRef.current[row.blob] = src.size
           patch(row.blob, { status: 'ok', done: src.size })
           setStats(s => s && { ...s, ok: s.ok + 1 })
+          log.add(`Subiendo ${ok + fail}/${todo.length}… ${row.name}`)
         } catch (e) {
           fail++; patch(row.blob, { status: 'error', error: e.message })
+          log.add(`${row.name}: ${e.message}`, true)
           setStats(s => s && { ...s, fail: s.fail + 1 })
         }
       }
@@ -335,6 +385,7 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
     if (refreshIndex && ok > 0) { try { await api.refreshIndex() } catch { /* índice nocturno lo cubre */ } }
     setMsg({ ok: fail === 0, text: `Listo: ${ok} subido${ok !== 1 ? 's' : ''}${fail ? `, ${fail} con error` : ''}.` })
     setBusy(false)
+    setStage(''); log.finish(ok, rows.length - todo.length, fail)
   }
 
   const totalBytes = files.reduce((s, f) => s + (f.size || 0), 0)
@@ -353,16 +404,14 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
       {files.length > 0 && (
         <div className="up-note"><strong style={{ color: 'var(--text)' }}>{files.length}</strong> archivo{files.length !== 1 ? 's' : ''} · {fmtSize(totalBytes)}{files.some(f => f.relativePath) && ' · carpeta completa'}</div>
       )}
-      <label className="up-check-row">
-        <input type="checkbox" checked={keepNames} onChange={e => { setKeepNames(e.target.checked); setRows([]) }} />
-        Mantener nombres y carpetas originales (sin prefijo ni fechas)
-      </label>
       <p className="up-hint">Van directo de tu equipo al almacenamiento en bloques de 32 MB con reintentos: los videos de varias GB no dependen del timeout del servidor. No cierres la pestaña hasta que termine.</p>
 
       <div className="up-pickers">
         <button type="button" className="up-btn-ghost" onClick={analyze} disabled={busy || !files.length}>{busy && !rows.length ? 'Analizando…' : 'Analizar archivos'}</button>
         {rows.length > 0 && <button type="button" className="up-btn-primary" onClick={start} disabled={busy || selCount === 0}>{busy ? 'Subiendo…' : `Subir ${selCount} archivo${selCount !== 1 ? 's' : ''}`}</button>}
+        <span className="uplog-status" role="status">{stage}</span>
       </div>
+      <UploadLog lines={log.lines} />
       {stats && <UploadStats stats={stats} />}
       {msg && <div className={`alert ${msg.ok ? 'alert-ok' : 'alert-error'}`} style={{ marginTop: 12 }}>{msg.text}</div>}
 
@@ -400,11 +449,12 @@ function UploadStats({ stats }) {
 // Migración por COPIA servidor-a-servidor: (1) lanza las copias en tandas
 // (rápido, la Function solo da la orden) y (2) sondea el estado hasta que Azure
 // termina de copiar en segundo plano.
-async function runCopyMigration({ todo, issue, statusBase, onProgress }) {
+async function runCopyMigration({ todo, issue, statusBase, onProgress, onEvent = () => {} }) {
   const byBlob = new Map(todo.map(f => [f.blobPath, f]))
   const allPaths = todo.map(f => f.blobPath)
   const sleep = ms => new Promise(r => setTimeout(r, ms))
   let remaining = [...allPaths]   // los que faltan por copiar bien
+  const issueErrors = new Set()
   let round = 0
 
   while (remaining.length && round < 10) {
@@ -412,18 +462,30 @@ async function runCopyMigration({ todo, issue, statusBase, onProgress }) {
     // 1) Lanzar copias de los que faltan, en tandas (con reintento si throttlea).
     let queue = remaining.map(bp => byBlob.get(bp)).filter(Boolean)
     let issued = 0
+    let requestErrors = 0
     while (queue.length) {
       const chunk = queue.slice(0, REMOTE_CHUNK)
       let res
       try {
         // Reusa la dlUrl del Analizar (sin llamar a Graph). En reintentos
         // (round > 1) pide fresca por si caducó.
-        res = await issue(chunk.map(f => ({ driveId: f.driveId, itemId: f.itemId, blobPath: f.blobPath, name: f.name, dlUrl: f.dlUrl })), round > 1)
-      } catch { await sleep(15000); continue }   // el request entero falló → esperar y reintentar la tanda
-      const processed = res.processed || chunk.length
+        res = await issue(chunk.map(f => ({ driveId: f.driveId, itemId: f.itemId, blobPath: f.blobPath, name: f.name, dlUrl: f.dlUrl, metadata: f.metadata })), round > 1)
+      } catch (e) {
+        onEvent(`Error al solicitar la copia: ${e.message}`, true)
+        if (++requestErrors >= 5) throw e
+        await sleep(15000); continue
+      }
+      const processed = res.processed ?? chunk.length
+      if (!processed && ++requestErrors >= 5) throw new Error('La copia no avanza; vuelve a intentar la migración.')
+      if (processed) requestErrors = 0
       issued += processed
       queue = queue.slice(processed)
       const errs = (res.results || []).filter(r => r.status === 'error').length
+      for (const result of res.results || []) {
+        if (result.status === 'error') { issueErrors.add(result.blobPath); onEvent(`${result.blobPath}: ${result.error}`, true) }
+        else issueErrors.delete(result.blobPath)
+      }
+      onEvent(`Copiando ${issued}/${todo.length}…`)
       onProgress({ phase: 'issuing', issued, total: todo.length, done: 0, pending: 0, failed: 0 })
       if (errs > chunk.length / 2) await sleep(10000)   // muchos errores = throttling → respirar
     }
@@ -431,11 +493,15 @@ async function runCopyMigration({ todo, issue, statusBase, onProgress }) {
     let st
     do {
       st = await api.postRemoteCopyStatus({ ...statusBase, blobPaths: allPaths })
-      onProgress({ phase: 'copying', total: st.total, done: st.done, pending: st.pending, failed: (st.failed || 0) + (st.missing || 0) })
+      const failedPaths = new Set([...(st.notDone || []), ...issueErrors])
+      const copied = Math.max(0, st.total - failedPaths.size - (st.pending || 0))
+      onEvent(`Copiando ${copied}/${st.total}… (${st.pending || 0} en curso)`)
+      for (const error of st.errors || []) onEvent(`${error.blobPath}: ${error.error}`, true)
+      onProgress({ phase: 'copying', total: st.total, done: copied, pending: st.pending, failed: failedPaths.size })
       if ((st.pending || 0) > 0) await sleep(3000)
     } while ((st.pending || 0) > 0)
     // 3) Lo que no quedó (missing/failed por throttling) se reintenta en la próxima ronda.
-    remaining = (st.notDone || []).filter(bp => byBlob.has(bp))
+    remaining = [...new Set([...(st.notDone || []), ...issueErrors])].filter(bp => byBlob.has(bp))
     if (remaining.length) await sleep(12000)
   }
   const done = allPaths.length - remaining.length
@@ -445,7 +511,7 @@ async function runCopyMigration({ todo, issue, statusBase, onProgress }) {
 // Análisis REANUDABLE: lista el árbol de SharePoint/OneDrive por tandas acotadas
 // en tiempo (cada llamada vuelve antes del timeout HTTP aunque Graph throttlee),
 // y al final arma el plan (blobPath + nuevo/existe) en una sola llamada sin Graph.
-async function runResumableAnalyze({ listPayload, preparePayload, onCount }) {
+async function runResumableAnalyze({ listPayload, preparePayload, onCount, onEvent = () => {} }) {
   let cursor
   let all = []
   let guard = 0
@@ -457,6 +523,7 @@ async function runResumableAnalyze({ listPayload, preparePayload, onCount }) {
     try {
       res = await api.postRemoteList(cursor ? { ...listPayload, cursor } : listPayload)
     } catch (e) {
+      onEvent(`Error al listar: ${e.message}. Reintentando…`, true)
       // Fallo puntual (throttling que agotó): esperar y reintentar la MISMA tanda.
       stale++
       if (stale > 20) throw new Error('Microsoft está limitando las consultas (throttling). Espera unos minutos y reintenta "Analizar".')
@@ -466,6 +533,7 @@ async function runResumableAnalyze({ listPayload, preparePayload, onCount }) {
     const got = (res.files || []).length
     all = all.concat(res.files || [])
     if (onCount) onCount(all.length)
+    onEvent(`Listando… ${all.length} archivos encontrados (${res.cursor?.pending?.length || 0} subcarpetas pendientes)`)
     if (res.done) break
     cursor = res.cursor
     if (!cursor || !cursor.pending || cursor.pending.length === 0) break
@@ -479,6 +547,7 @@ async function runResumableAnalyze({ listPayload, preparePayload, onCount }) {
     }
     if (++guard > 20000) throw new Error('El listado es demasiado grande')
   }
+  onEvent('Comparando con lo ya subido…')
   return api.postRemotePrepare({ ...preparePayload, files: all })
 }
 
@@ -498,6 +567,7 @@ function CopyProgress({ progress }) {
 }
 
 function RemoteSource({ source, projectCode, projectName, prefijo, subfolder, recursive, refreshIndex, ready }) {
+  const log = useUploadLog()
   const [spUrl, setSpUrl] = useState('')
   const [odEmail, setOdEmail] = useState('')
   const [odFolder, setOdFolder] = useState('/')
@@ -511,18 +581,29 @@ function RemoteSource({ source, projectCode, projectName, prefijo, subfolder, re
   async function doPlan() {
     if (!ready) { setMsg({ ok: false, text: 'Elige un proyecto primero.' }); return }
     setPlanning(true); setMsg(null); setPlan(null); setProgress(null); setCount(0)
+    log.reset(); log.add('Resolviendo enlace…')
     try {
-      const listPayload = { source }
-      if (source === 'sharepoint') listPayload.sharepointUrl = spUrl.trim()
-      else { listPayload.userEmail = odEmail.trim(); listPayload.sourceFolder = odFolder.trim() || '/' }
+      const listPayload = { source, recursive }
+      if (source === 'sharepoint') {
+        const resolved = await api.resolveSharepointUrl(spUrl.trim())
+        listPayload.siteId = resolved.site_id; listPayload.sourceFolder = resolved.folder_path
+        if (!resolved.site_id) throw new Error('No se pudo resolver el sitio de SharePoint')
+        log.add(`Sitio: ${resolved.site_name} · carpeta: ${resolved.folder_path}`)
+      } else {
+        listPayload.userEmail = odEmail.trim(); listPayload.sourceFolder = odFolder.trim() || '/'
+        log.add(`Sitio: OneDrive de ${odEmail.trim()} · carpeta: ${listPayload.sourceFolder}`)
+      }
       const p = await runResumableAnalyze({
         listPayload,
         preparePayload: { destination: 'project', projectCode, projectName, prefijo, subfolder },
         onCount: setCount,
+        onEvent: log.add,
       })
       setPlan(p)
+      logPlan(log, p)
+      if (!p.nuevos) log.finish(0, p.existentes + (p.omitidos || 0), 0)
       if (p.total === 0) setMsg({ ok: false, text: 'No se encontraron archivos en esa ubicación.' })
-    } catch (e) { setMsg({ ok: false, text: `No se pudo analizar: ${e.message}` }) }
+    } catch (e) { log.add(`No se pudo analizar: ${e.message}`, true); setMsg({ ok: false, text: `No se pudo analizar: ${e.message}` }) }
     finally { setPlanning(false) }
   }
 
@@ -537,10 +618,12 @@ function RemoteSource({ source, projectCode, projectName, prefijo, subfolder, re
         issue: (items, refresh) => api.postRemoteBatch({ projectCode, projectName, subfolder, items, refresh }),
         statusBase: { projectCode, projectName, subfolder },
         onProgress: setProgress,
+        onEvent: log.add,
       })
       if (refreshIndex) { try { await api.refreshIndex() } catch { /* índice nocturno */ } }
       setMsg({ ok: st.failed === 0, text: `Copia completa: ${st.done} de ${st.total}${st.failed ? `, ${st.failed} con error` : ''}.` })
-    } catch (e) { setMsg({ ok: false, text: `Se detuvo: ${e.message}. Puedes volver a "Migrar" y continúa donde quedó.` }) }
+      log.finish(st.done, (plan.existentes || 0) + (plan.omitidos || 0), st.failed)
+    } catch (e) { log.add(`Se detuvo: ${e.message}`, true); setMsg({ ok: false, text: `Se detuvo: ${e.message}. Puedes volver a "Migrar" y continúa donde quedó.` }) }
     finally { setRunning(false) }
   }
 
@@ -574,7 +657,10 @@ function RemoteSource({ source, projectCode, projectName, prefijo, subfolder, re
             {running ? 'Migrando…' : `Migrar ${plan.nuevos} archivo${plan.nuevos !== 1 ? 's' : ''}`}
           </button>
         )}
+        <span className="uplog-status" role="status">{planning ? 'Analizando…' : running ? 'Subiendo…' : ''}</span>
       </div>
+
+      <UploadLog lines={log.lines} />
 
       {plan && (
         <div className="up-plan-summary">
