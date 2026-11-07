@@ -128,3 +128,26 @@
 .hw-page { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px 16px; }
 .hw-page > .hw-toolbar:first-child { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .hw-filters { background: var(--bg2); }
+
+/* Tablas: una a la vez, elegida con chips; la tabla llena la ventana y no se desplaza la página. */
+.hw-table-picker { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0 10px; }
+.hw-table-picker .filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.hw-table-picker .filter-chip b { font-weight: 700; font-variant-numeric: tabular-nums; padding: 1px 7px; border-radius: 99px; background: var(--bg2); }
+.hw-table-picker .filter-chip.active b { background: var(--accent); color: #fff; }
+.hw-table-section { border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: var(--bg2); }
+.hw-table-head { margin: 0; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg); }
+.hw-table-head h3 { margin: 0 auto 0 0; }
+.hw-table-head input { width: 200px; }
+.hw-hidden-cols { font-size: 11px; color: var(--text-dim); cursor: help; border-bottom: 1px dotted var(--text-faint); }
+.hw-pager { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.hw-pager .btn { min-width: 28px; padding: 3px 8px; }
+.hw-table-section .hw-scroll { max-height: 460px; }
+.hw-table th { background: var(--bg3); color: var(--text-dim); font-weight: 600; border-bottom: 1px solid var(--border-hi, var(--border)); }
+.hw-table td { white-space: nowrap; vertical-align: middle; }
+.hw-table .hw-col-wrap { white-space: normal; min-width: 150px; max-width: 260px; }
+.hw-table tbody tr:nth-child(even) td { background: color-mix(in srgb, var(--bg3) 40%, transparent); }
+.hw-table tbody tr:hover td { background: var(--accent-bg); }
+.hw-table-section .hw-empty { padding: 12px; }
+/* Dentro de una tarjeta del tablero, sin marco doble. */
+.hw-card .hw-table-section { border: 0; border-radius: 0; background: none; }
+.hw-card .hw-table-head { padding: 0 0 8px; background: none; }

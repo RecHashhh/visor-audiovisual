@@ -52,6 +52,7 @@ export default function HardwarePage() {
   const [period, setPeriod] = useState(() => defaultPeriod());
   const [tab, setTab] = useState('resumen');
   const [modes, setModes] = useState({});
+  const [tableIds, setTableIds] = useState({});
   const [filter, setFilter] = useState(null);
   const [prices, setPrices] = useState(DEFAULT_PRICES);
   const [threshold, setThreshold] = useState(90);
@@ -190,6 +191,9 @@ export default function HardwarePage() {
     setFilter(drillFilter(config, label, series, period));
   };
 
+  const sectionTables = model?.tables?.[tab] || [];
+  const activeTable = sectionTables.find(table => table.id === tableIds[tab]) || sectionTables[0];
+
   return <div className="hw-page">
     <div className="hw-toolbar">
       <h1>Hardware</h1>
@@ -301,14 +305,15 @@ export default function HardwarePage() {
         </div>
       </>}
       {tab !== 'resumen' && tab !== 'explorar' && viewMode === 'tables' && <>
-        <nav className="hw-table-index" aria-label="Índice de tablas">
-          {model.tables[tab].map(table => <a key={table.id} href={`#hw-${table.id}`}>
-            {table.title}
-          </a>)}
-        </nav>
-        {model.tables[tab].map(table => <div key={table.id} id={`hw-${table.id}`}>
-          <Table {...table} filename={`hardware-${table.id}`} />
-        </div>)}
+        {model.tables[tab].length > 1 && <nav className="hw-table-picker" role="tablist" aria-label="Tablas de la sección">
+          {model.tables[tab].map(table => <button key={table.id} type="button" role="tab"
+            aria-selected={table.id === activeTable?.id}
+            className={`filter-chip ${table.id === activeTable?.id ? 'active' : ''}`}
+            onClick={() => setTableIds(ids => ({ ...ids, [tab]: table.id }))}>
+            {table.title} <b>{table.rows.length.toLocaleString('es')}</b>
+          </button>)}
+        </nav>}
+        {activeTable && <Table key={activeTable.id} {...activeTable} filename={`hardware-${activeTable.id}`} fill />}
       </>}
       {tab === 'licencias' && viewMode === 'tables' && preferencesReady && hasCap(me, 'hardware') && <LicensePrices prices={prices}
         skus={data.licenseStock} saving={saving} onSave={async licensePrices => {

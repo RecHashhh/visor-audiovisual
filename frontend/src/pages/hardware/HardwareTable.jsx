@@ -1,17 +1,34 @@
-import { useState } from 'react';
+import { useLayoutEffect, useRef, useState } from 'react';
 import { typeLabel } from './v3Metrics';
 import { number, usd } from '../../components/charts/HardwareCharts';
 
+// Columnas cuyo texto más largo supera esto se ajustan en varias líneas; el resto no se corta.
+const WRAP_AT = 24;
+
+// fill: la tabla ocupa el alto restante de la ventana, sin desplazar la página.
 export function Table({
   title,
   rows,
   columns,
   filename = 'hardware',
-  limit = 100
+  limit = 100,
+  fill = false
 }) {
   const [query, setQuery] = useState(''),
     [order, setOrder] = useState(null),
-    [page, setPage] = useState(0);
+    [page, setPage] = useState(0),
+    [maxHeight, setMaxHeight] = useState(null);
+  const scroller = useRef(null);
+  useLayoutEffect(() => {
+    if (!fill) return undefined;
+    const fit = () => {
+      const top = scroller.current?.getBoundingClientRect().top;
+      if (top != null) setMaxHeight(Math.max(260, Math.floor(window.innerHeight - top - 20)));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [fill, rows]);
   const value = (row, col) => col[2] ? col[2](row) :
     ['value', 'monthlyCost', 'saving'].includes(col[0]) ? usd(row[col[0]]) :
       col[0] === 'type' ? typeLabel(row[col[0]]) : row[col[0]] ?? '';
@@ -41,27 +58,42 @@ export function Table({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
-  const currentPage = Math.min(page, Math.max(0, Math.ceil(filtered.length / limit) - 1));
-  return <section className="hw-table-section">
-  <div className="hw-toolbar">
+  const pages = Math.max(1, Math.ceil(filtered.length / limit));
+  const currentPage = Math.min(page, pages - 1);
+  const pageRows = filtered.slice(currentPage * limit, (currentPage + 1) * limit);
+  // Columnas sin ningún dato en el resultado: se ocultan en pantalla, el CSV las conserva.
+  const shown = columns.filter(c => filtered.some(r => String(value(r, c) ?? '').trim() !== ''));
+  const hidden = filtered.length ? columns.filter(c => !shown.includes(c)) : [];
+  const visible = filtered.length ? shown : columns;
+  const wraps = new Set(visible.filter(c => pageRows.some(r => String(value(r, c)).length > WRAP_AT)).map(c => c[0]));
+  return <section className={`hw-table-section${fill ? ' hw-table-fill' : ''}`}>
+  <div className="hw-toolbar hw-table-head">
     <h3>
       {title}
       <small>
         {number(filtered.length)}
       </small>
     </h3>
+    {hidden.length > 0 && <span className="hw-hidden-cols" title={`Sin datos: ${hidden.map(c => c[1]).join(', ')}. El CSV las incluye.`}>
+      {hidden.length} columnas vacías ocultas
+    </span>}
     <input aria-label={`Buscar en ${title}`} placeholder="Buscar" value={query} onChange={e => {
         setQuery(e.target.value);
         setPage(0);
       }} />
+    {pages > 1 && <div className="hw-pager" aria-label="Páginas">
+      <button className="btn btn-sm" aria-label="Página anterior" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>‹</button>
+      <span>{currentPage + 1} / {pages}</span>
+      <button className="btn btn-sm" aria-label="Página siguiente" disabled={currentPage + 1 >= pages}
+        onClick={() => setPage(currentPage + 1)}>›</button>
+    </div>}
     <button className="btn" onClick={exportCsv} disabled={!filtered.length}>CSV</button>
   </div>
-  {filtered.length ? <>
-    <div className="hw-scroll">
+  {filtered.length ? <div className="hw-scroll" ref={scroller} style={fill && maxHeight ? { maxHeight } : undefined}>
       <table className="hw-table">
         <thead>
           <tr>
-            {columns.map(c => <th key={c[0]}
+            {visible.map(c => <th key={c[0]} className={wraps.has(c[0]) ? 'hw-col-wrap' : undefined}
               aria-sort={order?.key === c[0] ? order.dir === 1 ? 'ascending' : 'descending' : 'none'}>
               <button onClick={() => {
                   setOrder({
@@ -71,30 +103,19 @@ export function Table({
                   setPage(0);
                 }}>
                 {c[1]}
-                {order?.key === c[0] ? order.dir === 1 ? '↑' : '↓' : ''}
+                {order?.key === c[0] ? order.dir === 1 ? ' ↑' : ' ↓' : ''}
               </button>
             </th>)}
           </tr>
         </thead>
         <tbody>
-          {filtered.slice(currentPage * limit, (currentPage + 1) * limit).map((r, i) => <tr key={i}>
-            {columns.map(c => <td key={c[0]}>
+          {pageRows.map((r, i) => <tr key={i}>
+            {visible.map(c => <td key={c[0]} className={wraps.has(c[0]) ? 'hw-col-wrap' : undefined}>
               {c[3] ? c[3](value(r, c)) : value(r, c)}
             </td>)}
           </tr>)}
         </tbody>
       </table>
-    </div>
-    {filtered.length > limit && <div className="hw-toolbar">
-      <button className="btn" disabled={!currentPage} onClick={() => setPage(currentPage - 1)}>Anterior</button>
-      <span>
-        {currentPage + 1}
-         /
-        {Math.ceil(filtered.length / limit)}
-      </span>
-      <button className="btn" disabled={(currentPage + 1) * limit >= filtered.length}
-        onClick={() => setPage(currentPage + 1)}>Siguiente</button>
-    </div>}
-  </> : <p className="hw-empty">Sin registros</p>}
+    </div> : <p className="hw-empty">Sin registros</p>}
 </section>;
 }
