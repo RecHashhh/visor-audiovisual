@@ -91,6 +91,13 @@ export default function HardwarePage() {
       setError(results.filter(result => result.status === 'rejected')
         .map(result => result.reason.message).join(' · '));
       setBusy(false);
+      // Foto de ayer: se muestra al instante y se renueva en segundo plano, sin bloquear.
+      if (photo.status === 'fulfilled' && photo.value?.stale) {
+        setBusy(true);
+        try { const next = await api.refreshHardware(); if (live) setSnapshot(next); }
+        catch { /* Se queda la foto anterior; «Actualizar ahora» permite reintentar. */ }
+        finally { if (live) setBusy(false); }
+      }
     };
     load();
     return () => { live = false; };

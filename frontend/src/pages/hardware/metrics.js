@@ -418,10 +418,10 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
     })),
   })) : life.byType.map(row => ({ label: row.label, count: row.medianMonths / 12 }));
   const activeRows = data.active.map(row => ({ ...row, amount: 1 }));
-  const ids = new Set(data.items.map(item => String(item.id)));
   const quality = snapshot.quality || {};
-  const qualityRows = key => (quality[key] || []).filter(row => ids.has(String(row.id)))
-    .map(row => ({ ...row, project: projectName(row.project) }));
+  // La foto nueva trae solo ids; la anterior, el equipo completo. Ambas se resuelven contra items filtrados.
+  const byId = new Map(data.items.map(item => [String(item.id), item]));
+  const qualityRows = key => (quality[key] || []).map(row => byId.get(String(row?.id ?? row))).filter(Boolean);
   const qualityGroups = [
     ['recoverEquipment', 'Equipos a recuperar · fuera de nómina'],
     ['withoutPurchaseDate', 'Sin fecha de compra'],

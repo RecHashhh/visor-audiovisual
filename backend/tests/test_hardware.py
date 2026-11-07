@@ -76,7 +76,7 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual(snapshot['kpis']['licensedEmailPercent'], 100)
         self.assertEqual(snapshot['coverage']['people'][0]['licenses'], ['Microsoft 365 Empresa Premium'])
         self.assertEqual(snapshot['items'][0]['project']['code'], '4767')
-        self.assertEqual(snapshot['quality']['recoverEquipment'][0]['code'], 'C1')
+        self.assertEqual(snapshot['quality']['recoverEquipment'], [2])
         self.assertEqual(snapshot['quality']['unmatchedProjects'], [{'project': '999-Erróneo', 'count': 1}, {'project': '888-Otro', 'count': 1}])
         self.assertEqual(len(snapshot['quality']['unassignedComputers']), 1)
         self.assertEqual(sum(r['value'] for r in snapshot['companiesByYear']), 1800)
@@ -95,7 +95,8 @@ class HardwareTests(unittest.TestCase):
         payroll = [{'cedula': '0123456789', 'name': 'Ana', 'area': 'TECNICO', 'project': project('4767-Nombre oficial-Genérico')}]
         result = build_snapshot(mesa, payroll)
         self.assertEqual(result['items'][0]['project']['name'], 'Nombre oficial')
-        self.assertEqual(result['quality']['recoverEquipment'][0]['custodian'], 'Eva')
+        self.assertEqual(result['quality']['recoverEquipment'], [1])
+        self.assertEqual(result['items'][0]['custodian'], 'Eva')
         self.assertEqual(result['items'][0]['area'], 'fuera de nómina')
         self.assertEqual(result['kpis']['targetPeople'], 1)
 
@@ -207,42 +208,24 @@ class HardwareIntegrationTests(unittest.TestCase):
             self.assertEqual(result.status_code, 404)
             self.assertIn('foto', json.loads(result.get_body())['error'])
 
-    def test_recent_legacy_snapshot_refreshes_for_account_details(self):
-        from datetime import datetime, timezone
+    def test_open_never_waits_for_refresh_and_marks_old_photo(self):
+        # Abrir Hardware responde al instante con la foto guardada; la página la renueva en segundo plano.
+        from datetime import datetime, timedelta, timezone
         import azure.functions as func
         import function_app as app
-        old = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'licenses': {'bySku': [{'sku': 'SPB'}]}}
-        updated = {**old, 'licenses': {**old['licenses'], 'accounts': []}}
+        now = datetime.now(timezone.utc)
+        cases = [
+            ({'generatedAt': now.isoformat(), 'licenses': {'bySku': [{'sku': 'SPB', 'assigned': 3}]}}, True),  # sin cuentas
+            ({'generatedAt': (now - timedelta(hours=30)).isoformat(), 'licenses': {'bySku': [], 'accounts': []}}, True),  # de ayer
+            ({'generatedAt': now.isoformat(), 'licenses': {'bySku': [], 'accounts': []}}, False),
+        ]
         req = func.HttpRequest(method='GET', url='http://local/api/hardware', body=b'')
-        def renew():
-            app._hardware_cached = updated
-            return updated
-        with patch.object(app, 'require_perms', return_value=({}, None)), \
-                patch.object(app, 'load_json_blob', return_value=old), \
-                patch.object(app, '_hardware_cached', None), \
-                patch.object(app, '_hardware_cached_at', 0), \
-                patch.object(app, '_hardware_refresh', side_effect=renew) as refresh:
-            result = app.hardware_get.build().get_user_function()(req)
-            self.assertEqual(json.loads(result.get_body())['licenses']['accounts'], [])
-            app.hardware_get.build().get_user_function()(req)
-            refresh.assert_called_once()
-
-    def test_legacy_inventory_survives_refresh_failure_without_repeated_attempts(self):
-        from datetime import datetime, timezone
-        import azure.functions as func
-        import function_app as app
-        old = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'licenses': {'bySku': [{'sku': 'SPB', 'assigned': 3}]}}
-        req = func.HttpRequest(method='GET', url='http://local/api/hardware', body=b'')
-        with patch.object(app, 'require_perms', return_value=({}, None)), \
-                patch.object(app, 'load_json_blob', return_value=old), \
-                patch.object(app, '_hardware_cached', None), \
-                patch.object(app, '_hardware_cached_at', 0), \
-                patch.object(app, '_hardware_refresh', side_effect=RuntimeError('En curso')) as refresh:
-            for _ in range(2):
-                result = app.hardware_get.build().get_user_function()(req)
-                self.assertEqual(json.loads(result.get_body())['licenses']['bySku'][0]['assigned'], 3)
-            refresh.assert_called_once()
-
+        for photo, stale in cases:
+            with patch.object(app, 'require_perms', return_value=({}, None)),                     patch.object(app, 'load_json_blob', return_value=photo),                     patch.object(app, '_hardware_cached', None),                     patch.object(app, '_hardware_cached_at', 0),                     patch.object(app, '_hardware_refresh') as refresh:
+                body = json.loads(app.hardware_get.build().get_user_function()(req).get_body())
+                self.assertEqual(body['stale'], stale)
+                self.assertEqual(body['licenses']['bySku'], photo['licenses']['bySku'])
+                refresh.assert_not_called()
 
 if __name__ == '__main__':
     unittest.main()

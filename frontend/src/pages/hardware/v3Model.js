@@ -20,7 +20,7 @@ const accountColumns = [
 const table = (id, title, rows, columns = equipmentColumns) => ({ id, title, rows, columns });
 export function extendModel(model, snapshot, data, period, filter, prices = DEFAULT_PRICES, threshold = 90, country = '') {
   const today = new Date(snapshot.generatedAt || Date.now());
-  const departed = new Set((snapshot.quality?.recoverEquipment || []).map(row => String(row.id)));
+  const departed = new Set((snapshot.quality?.recoverEquipment || []).map(row => String(row?.id ?? row)));
   const computers = data.active.filter(computer).map(row => ({ ...row,
     equipmentState: row.equipmentState || computerState({ ...row,
       inPayroll: row.inPayroll ?? (!!row.cedula && !departed.has(String(row.id))),

@@ -4530,6 +4530,17 @@ def upload_remote_media_batch(req: func.HttpRequest) -> func.HttpResponse:
 _hardware_lock = Lock()
 _hardware_cached = None
 _hardware_cached_at = 0
+_hardware_body = None  # ((id de la foto, vieja), bytes): la foto pesa MB; se serializa una vez
+
+
+def _hardware_response(snapshot, stale):
+    global _hardware_body
+    key = (id(snapshot), stale)
+    if _hardware_body is None or _hardware_body[0] != key:
+        body = json.dumps({**snapshot, "stale": stale}, ensure_ascii=False, separators=(",", ":"), default=str)
+        _hardware_body = (key, body.encode("utf-8"))
+    return func.HttpResponse(body=_hardware_body[1], status_code=200,
+                             headers={**cors_headers(), "Content-Type": "application/json; charset=utf-8"})
 HARDWARE_REFRESH_CRON = os.environ.get("HARDWARE_REFRESH_CRON", "0 0 6 * * *")
 
 
@@ -4583,7 +4594,8 @@ def hardware_get(req: func.HttpRequest) -> func.HttpResponse:
     if reload_snapshot:
         _hardware_cached = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/hardware/snapshot.json")
         _hardware_cached_at = time.monotonic()
-    # Static Web Apps no ejecuta temporizadores: la foto vieja (> 20 h) se renueva al abrir la sección.
+    # Static Web Apps no ejecuta temporizadores. La foto vieja (> 20 h) se entrega al instante marcada
+    # «stale» y la página la renueva en segundo plano (POST hardware/refresh): abrir no espera a la Mesa ni a M365.
     try:
         generated = datetime.fromisoformat(str((_hardware_cached or {}).get("generatedAt")))
         stale = datetime.now(timezone.utc) - generated > timedelta(hours=20)
@@ -4591,14 +4603,9 @@ def hardware_get(req: func.HttpRequest) -> func.HttpResponse:
         stale = _hardware_cached is not None
     needs_accounts = reload_snapshot and _hardware_cached is not None and not isinstance(
         (_hardware_cached.get("licenses") or {}).get("accounts"), list)
-    if stale or needs_accounts:
-        try:
-            _hardware_refresh()
-        except RuntimeError:
-            pass  # otra actualización en curso: se sirve la foto anterior
-        except Exception:
-            logging.exception("hardware_get: renovación automática")
-    return ok(_hardware_cached) if _hardware_cached is not None else err("Aún no hay foto de Hardware. Pulsa Actualizar ahora.", 404)
+    if _hardware_cached is None:
+        return err("Aún no hay foto de Hardware. Pulsa Actualizar ahora.", 404)
+    return _hardware_response(_hardware_cached, bool(stale or needs_accounts))
 
 
 def _hardware_preferences(req, resource):

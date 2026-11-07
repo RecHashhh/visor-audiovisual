@@ -222,7 +222,8 @@ def quality_block(items, people, catalog, mesa_catalog=None):
             continue
         if i['cedula'] and (not rip_code or rip_code not in catalog):
             projects[i['ripProject'] or 'Sin proyecto'] += 1
-    return {'recoverEquipment': recover, 'unmatchedProjects': [{'project': p, 'count': n} for p, n in projects.items()], 'withoutPurchaseDate': [i for i in items if i['year'] == 'sin fecha'], 'unassignedComputers': [i for i in items if i.get('active') and i['type'] in ('LAPTOP', 'CPU') and not i['cedula']]}
+    # Solo ids: los equipos completos ya viajan en items (copiarlos aquí duplicaba ~2 MB de la foto).
+    return {'recoverEquipment': [i['id'] for i in recover], 'unmatchedProjects': [{'project': p, 'count': n} for p, n in projects.items()], 'withoutPurchaseDate': [i['id'] for i in items if i['year'] == 'sin fecha'], 'unassignedComputers': [i['id'] for i in items if i.get('active') and i['type'] in ('LAPTOP', 'CPU') and not i['cedula']]}
 
 
 
