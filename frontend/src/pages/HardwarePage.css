@@ -162,3 +162,12 @@
 @media (min-width: 2000px) { .hw-page { --hw-k: 1.2; } }
 @media (min-width: 2400px) { .hw-page { --hw-k: 1.3; } }
 @media (min-width: 3200px) { .hw-page { --hw-k: 1.6; } }
+
+/* Barra de filtros en una sola fila: el período no salta completo a otra línea dejando un hueco a la derecha. */
+.hw-filters .hw-period { display: contents; }
+.hw-filters .hw-period .ss-root { width: 92px; }
+.hw-filters small { white-space: nowrap; color: var(--text-dim); font-size: 11px; }
+.hw-filters label { white-space: nowrap; }
+/* Tablas vacías: visibles pero atenuadas en el selector. */
+.hw-table-picker .hw-chip-empty { opacity: .55; }
+.hw-table-picker .hw-chip-empty.active { opacity: 1; }

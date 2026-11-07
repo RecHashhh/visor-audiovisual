@@ -191,8 +191,12 @@ export default function HardwarePage() {
     setFilter(drillFilter(config, label, series, period));
   };
 
-  const sectionTables = model?.tables?.[tab] || [];
-  const activeTable = sectionTables.find(table => table.id === tableIds[tab]) || sectionTables[0];
+  // Tablas de la sección, una a la vez; «Precios» (solo quien administra) es una más en Licencias.
+  const canEditPrices = tab === 'licencias' && preferencesReady && hasCap(me, 'hardware');
+  const sectionTables = [...(model?.tables?.[tab] || []),
+    ...(canEditPrices ? [{ id: 'precios', title: 'Precios', rows: data?.licenseStock || [] }] : [])];
+  const activeTable = sectionTables.find(table => table.id === tableIds[tab]) ||
+    sectionTables.find(table => table.rows.length) || sectionTables[0];
 
   return <div className="hw-page">
     <div className="hw-toolbar">
@@ -236,7 +240,7 @@ export default function HardwarePage() {
       {!snapshot.payrollUploaded && <div className="alert">
         Actualiza la nómina para calcular áreas y cobertura de personas.
       </div>}
-      {!licenseScope.accountsAvailable && ['resumen', 'licencias'].includes(tab) && <div className="hw-license-status" role="status">
+      {!licenseScope.accountsAvailable && tab === 'licencias' && <div className="hw-license-status" role="status">
         Inventario disponible. Actualiza para consultar quién tiene cada licencia y su último ingreso.
         <button type="button" className="hw-card-link" disabled={busy} onClick={() => update()}>Actualizar datos</button>
       </div>}
@@ -305,17 +309,18 @@ export default function HardwarePage() {
         </div>
       </>}
       {tab !== 'resumen' && tab !== 'explorar' && viewMode === 'tables' && <>
-        {model.tables[tab].length > 1 && <nav className="hw-table-picker" role="tablist" aria-label="Tablas de la sección">
-          {model.tables[tab].map(table => <button key={table.id} type="button" role="tab"
+        {sectionTables.length > 1 && <nav className="hw-table-picker" role="tablist" aria-label="Tablas de la sección">
+          {sectionTables.map(table => <button key={table.id} type="button" role="tab"
             aria-selected={table.id === activeTable?.id}
-            className={`filter-chip ${table.id === activeTable?.id ? 'active' : ''}`}
+            className={`filter-chip ${table.id === activeTable?.id ? 'active' : ''} ${table.rows.length ? '' : 'hw-chip-empty'}`}
             onClick={() => setTableIds(ids => ({ ...ids, [tab]: table.id }))}>
             {table.title} <b>{table.rows.length.toLocaleString('es')}</b>
           </button>)}
         </nav>}
-        {activeTable && <Table key={activeTable.id} {...activeTable} filename={`hardware-${activeTable.id}`} fill />}
+        {activeTable && activeTable.id !== 'precios' &&
+          <Table key={activeTable.id} {...activeTable} filename={`hardware-${activeTable.id}`} fill />}
       </>}
-      {tab === 'licencias' && viewMode === 'tables' && preferencesReady && hasCap(me, 'hardware') && <LicensePrices prices={prices}
+      {activeTable?.id === 'precios' && viewMode === 'tables' && <LicensePrices prices={prices}
         skus={data.licenseStock} saving={saving} onSave={async licensePrices => {
           setSaving(true);
           try {
