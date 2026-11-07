@@ -14,9 +14,12 @@ export const PALETTE = [
 
 // Los segmentos entregan etiqueta, serie y registro para abrir el detalle exacto.
 export default function HardwareChart({
-  data, kind = 'horizontal', onSelect, title, unit = 'number', height = 200, max,
+  data, kind = 'horizontal', onSelect, title, unit = 'number', height = 200, max, fit = false,
 }) {
   const host = useRef(null);
+  const plot = useRef(null);
+  // fit: el gráfico toma el alto que le deja su tarjeta (tablero ajustado a la ventana).
+  const [plotHeight, setPlotHeight] = useState(null);
   const svg = useRef(null);
   const [width, setWidth] = useState(400);
   const [tip, setTip] = useState('');
@@ -29,6 +32,15 @@ export default function HardwareChart({
     observer.observe(host.current);
     return () => observer.disconnect();
   }, []);
+
+  useEffect(() => {
+    if (!fit) return undefined;
+    const observer = new ResizeObserver(([entry]) =>
+      setPlotHeight(Math.max(60, Math.floor(entry.contentRect.height))));
+    observer.observe(plot.current);
+    return () => observer.disconnect();
+  }, [fit]);
+  const target = fit && plotHeight ? plotHeight : height;
 
   useEffect(() => {
     const observer = new MutationObserver(() => setTheme(value => value + 1));
@@ -60,7 +72,7 @@ export default function HardwareChart({
     probe.style('font-size', '10px');
     const margin = { top: 12, ...layout,
       right: horizontal ? Math.min(width * .35, numberWidth + 12) : layout.right };
-    const chartHeight = Math.max(height, margin.top + margin.bottom + (horizontal ? data.length * 23 : 90));
+    const chartHeight = Math.max(target, margin.top + margin.bottom + (horizontal ? data.length * (fit ? 14 : 23) : fit ? 60 : 90));
     const w = Math.max(1, width - margin.left - margin.right);
     const h = chartHeight - margin.top - margin.bottom;
     root.attr('viewBox', `0 0 ${width} ${chartHeight}`).attr('height', chartHeight);
@@ -191,11 +203,13 @@ export default function HardwareChart({
           probe.remove(); return text;
         }).append('title').text(row => format(row.count));
     }
-  }, [data, width, kind, onSelect, theme, height, unit, max]);
+  }, [data, width, kind, onSelect, theme, target, fit, unit, max]);
 
-  return <div ref={host} className="hw-chart">
+  return <div ref={host} className={`hw-chart${fit ? ' hw-chart-fit' : ''}`}>
     {title && <h3>{title}</h3>}
-    <svg ref={svg} height={height} role="group" aria-label={title || 'Gráfico de hardware'} />
+    <div ref={plot} className="hw-chart-plot">
+      <svg ref={svg} height={target} role="group" aria-label={title || 'Gráfico de hardware'} />
+    </div>
     {!data.length && <p className="hw-empty">Sin datos</p>}
     {series.length > 1 && <div className="hw-legend">
       {series.map((key, index) => <span key={key} title={key}

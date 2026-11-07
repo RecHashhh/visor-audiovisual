@@ -171,3 +171,26 @@
 /* Tablas vacías: visibles pero atenuadas en el selector. */
 .hw-table-picker .hw-chip-empty { opacity: .55; }
 .hw-table-picker .hw-chip-empty.active { opacity: 1; }
+
+/* Selector de tablas: pestañas pegadas como las secciones (sin óvalos), conteo discreto. */
+.hw-table-picker.segmented { display: inline-flex; flex-wrap: wrap; gap: 0; margin: 10px 0 8px; }
+.hw-table-picker .segmented-btn { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; font-size: 12px; }
+.hw-table-picker .segmented-btn b { font-weight: 700; font-variant-numeric: tabular-nums; color: var(--text-faint); }
+.hw-table-picker .segmented-btn.active b { color: #fff; opacity: .8; }
+.hw-table-picker .hw-chip-empty { opacity: .5; }
+.hw-pager .btn { border-radius: var(--radius); }
+
+/* USD / Unidades: control discreto en el encabezado de la tarjeta. */
+.hw-unit-toggle { display: inline-flex; margin-left: auto; border: 1px solid var(--border); border-radius: 4px; overflow: hidden; flex: none; }
+.hw-unit-toggle button { padding: 1px 7px; font: inherit; font-size: 10px; line-height: 16px; color: var(--text-dim); background: none; border: 0; cursor: pointer; }
+.hw-unit-toggle button + button { border-left: 1px solid var(--border); }
+.hw-unit-toggle button.active { background: var(--accent); color: #fff; }
+.hw-unit-toggle button:hover:not(.active) { background: var(--bg3); color: var(--text); }
+.hw-card > header { align-items: center; }
+
+/* Tablero ajustado a la ventana: filas iguales, el gráfico ocupa el alto libre de su tarjeta. */
+.hw-cards-fit { grid-auto-rows: minmax(0, 1fr); }
+.hw-cards-fit .hw-card { height: auto; min-height: 0; display: flex; flex-direction: column; }
+.hw-cards-fit .hw-card > .hw-chart { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.hw-chart-fit .hw-chart-plot { flex: 1; min-height: 0; overflow: hidden; }
+.hw-cards-fit .hw-card > small, .hw-cards-fit .hw-legend, .hw-cards-fit .hw-tooltip { flex: none; }

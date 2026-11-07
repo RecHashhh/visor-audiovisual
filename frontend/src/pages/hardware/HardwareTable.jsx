@@ -1,4 +1,5 @@
-import { useLayoutEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
+import { useFit } from './useFit';
 import { typeLabel } from './v3Metrics';
 import { number, usd } from '../../components/charts/HardwareCharts';
 
@@ -16,22 +17,8 @@ export function Table({
 }) {
   const [query, setQuery] = useState(''),
     [order, setOrder] = useState(null),
-    [page, setPage] = useState(0),
-    [maxHeight, setMaxHeight] = useState(null);
+    [page, setPage] = useState(0);
   const scroller = useRef(null);
-  useLayoutEffect(() => {
-    if (!fill) return undefined;
-    const fit = () => {
-      const el = scroller.current;
-      if (!el) return;
-      // Con zoom (monitores grandes) el rectángulo viene en px de pantalla; el alto se aplica sin zoom.
-      const zoom = el.currentCSSZoom || 1;
-      setMaxHeight(Math.max(260, Math.floor((window.innerHeight - el.getBoundingClientRect().top - 20) / zoom)));
-    };
-    fit();
-    window.addEventListener('resize', fit);
-    return () => window.removeEventListener('resize', fit);
-  }, [fill, rows]);
   const value = (row, col) => col[2] ? col[2](row) :
     ['value', 'monthlyCost', 'saving'].includes(col[0]) ? usd(row[col[0]]) :
       col[0] === 'type' ? typeLabel(row[col[0]]) : row[col[0]] ?? '';
@@ -61,6 +48,7 @@ export function Table({
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
+  const maxHeight = useFit(scroller, fill, 220, [rows, query, page, order?.key]);
   const pages = Math.max(1, Math.ceil(filtered.length / limit));
   const currentPage = Math.min(page, pages - 1);
   const pageRows = filtered.slice(currentPage * limit, (currentPage + 1) * limit);

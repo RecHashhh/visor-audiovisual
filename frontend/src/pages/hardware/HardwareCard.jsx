@@ -2,10 +2,11 @@ import HardwareChart, { number, usd } from '../../components/charts/HardwareChar
 import { Table } from './HardwareTable';
 import { comparison, explore, periodYears } from './metrics';
 
-export function Card({ title, onDetail, children }) {
+export function Card({ title, onDetail, actions, children }) {
   return <section className="hw-card">
     <header>
       <h3>{title}</h3>
+      {actions}
       {onDetail && <button type="button" className="hw-card-link" onClick={onDetail}>
         Ver detalle →
       </button>}
@@ -28,7 +29,7 @@ export function Kpi({ title, rows, period, context, value, money = false, percen
   </div>;
 }
 
-export function DataCard({ config, data, period, onSelect, onDetail, children }) {
+export function DataCard({ config, data, period, onSelect, onDetail, children, fit = false }) {
   const rows = explore(data, config, period);
   const compare = period.mode === 'comparar' &&
     !['people', 'licenses'].includes(config.measure);
@@ -41,7 +42,7 @@ export function DataCard({ config, data, period, onSelect, onDetail, children })
         ['label', 'Grupo'], ['count', 'Total'],
         ['series', 'Detalle', row => Object.entries(row.series)
           .map(([key, value]) => `${key}: ${number(value)}`).join(' · ')],
-      ]} /> : <HardwareChart data={rows} height={160} kind={kind}
+      ]} /> : <HardwareChart data={rows} height={160} kind={kind} fit={fit}
       unit={config.measure === 'value' ? 'usd' : 'number'}
       onSelect={onSelect} />}
     {['company', 'license'].includes(config.dimension) && (

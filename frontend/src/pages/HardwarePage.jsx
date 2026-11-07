@@ -20,6 +20,7 @@ import { DataCard } from './hardware/HardwareCard';
 import FixedCard from './hardware/FixedCard';
 import SectionKpis, { dateLabel } from './hardware/SectionKpis';
 import { Table } from './hardware/HardwareTable';
+import { useFit } from './hardware/useFit';
 import {
   availableYears, buildData, buildSectionModel, DEFAULT_EXCLUDED, defaultPeriod, drillFilter,
   groupDisposalReasons, parsePeriod, periodParams,
@@ -199,6 +200,16 @@ export default function HardwarePage() {
   const activeTable = sectionTables.find(table => table.id === tableIds[tab]) ||
     sectionTables.find(table => table.rows.length) || sectionTables[0];
 
+  // Tablero ajustado a la ventana: las tarjetas reparten el alto libre, sin scroll ni hueco abajo.
+  const cardsRef = useRef(null);
+  const cardCount = model.cards[tab]?.length || 0;
+  const cardCols = window.innerWidth <= 700 ? 1 : window.innerWidth <= 1200 ? 2 : 3;
+  const cardRows = Math.max(1, Math.ceil(cardCount / cardCols));
+  const fitCards = !!snapshot && tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') &&
+    cardCols > 1 && !(tab === 'resumen' && views.length);
+  const cardsHeight = useFit(cardsRef, fitCards, cardRows * 200 + (cardRows - 1) * 12,
+    [tab, viewMode, cardCount, cardCols, company, type, period, filter, busy]);
+
   return <div className="hw-page">
     <div className="hw-toolbar">
       <h1>Hardware</h1>
@@ -302,18 +313,19 @@ export default function HardwarePage() {
       {tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') && <>
         <SectionKpis tab={tab} data={data} period={period} snapshot={snapshot} model={model} />
         {tab === 'licencias' && <LicenseInventory scope={licenseScope} />}
-        <div className="hw-cards">
+        <div className={`hw-cards${fitCards ? ' hw-cards-fit' : ''}`} ref={cardsRef}
+          style={fitCards && cardsHeight ? { height: cardsHeight } : undefined}>
           {model.cards[tab].map((config, index) => (
-            <FixedCard key={`${tab}-${index}`} config={config} data={data}
+            <FixedCard key={`${tab}-${index}`} config={config} data={data} fit={fitCards}
               period={period} snapshot={snapshot} onDrill={drill} />
           ))}
         </div>
       </>}
       {tab !== 'resumen' && tab !== 'explorar' && viewMode === 'tables' && <>
-        {sectionTables.length > 1 && <nav className="hw-table-picker" role="tablist" aria-label="Tablas de la sección">
+        {sectionTables.length > 1 && <nav className="segmented hw-table-picker" role="tablist" aria-label="Tablas de la sección">
           {sectionTables.map(table => <button key={table.id} type="button" role="tab"
             aria-selected={table.id === activeTable?.id}
-            className={`filter-chip ${table.id === activeTable?.id ? 'active' : ''} ${table.rows.length ? '' : 'hw-chip-empty'}`}
+            className={`segmented-btn ${table.id === activeTable?.id ? 'active' : ''} ${table.rows.length ? '' : 'hw-chip-empty'}`}
             onClick={() => setTableIds(ids => ({ ...ids, [tab]: table.id }))}>
             {table.title} <b>{table.rows.length.toLocaleString('es')}</b>
           </button>)}

@@ -3,13 +3,13 @@ import HardwareChart, { number, usd } from '../../components/charts/HardwareChar
 import { Card, DataCard } from './HardwareCard';
 import { explore } from './metrics';
 
-export default function FixedCard({ config: original, data, period, onDrill }) {
+export default function FixedCard({ config: original, data, period, onDrill, fit = false }) {
   const [unit, setUnit] = useState('usd');
   const investment = original.measure === 'value' && original.name.startsWith('Inversión');
   const config = investment ? {
     ...original, measure: unit === 'usd' ? 'value' : 'equipment',
   } : original;
-  if (!config.chart && !investment) return <DataCard config={config} data={data}
+  if (!config.chart && !investment) return <DataCard config={config} data={data} fit={fit}
     period={period} onDetail={() => onDrill(config)}
     onSelect={(label, series) => onDrill(config, label, series)} />;
   let chart = config.chart || explore(data, config, period);
@@ -29,15 +29,14 @@ export default function FixedCard({ config: original, data, period, onDrill }) {
   }
   const title = investment && period.months && period.mode !== 'rango' ?
     'Inversión por mes' : config.name;
-  return <Card title={title} onDetail={() => onDrill(config)}>
-    {investment && <div className="segmented" role="tablist" aria-label="Medida de inversión">
-      {[['usd', 'USD'], ['units', 'Unidades']].map(([key, label]) => (
-        <button type="button" key={key} role="tab" aria-selected={unit === key}
-          className={`segmented-btn ${unit === key ? 'active' : ''}`}
-          onClick={() => setUnit(key)}>{label}</button>
-      ))}
-    </div>}
-    <HardwareChart height={160} data={chart}
+  const units = investment && <div className="hw-unit-toggle" role="tablist" aria-label="Medida de inversión">
+    {[['usd', 'USD'], ['units', 'Unidades']].map(([key, label]) => (
+      <button type="button" key={key} role="tab" aria-selected={unit === key}
+        className={unit === key ? 'active' : ''} onClick={() => setUnit(key)}>{label}</button>
+    ))}
+  </div>;
+  return <Card title={title} onDetail={() => onDrill(config)} actions={units}>
+    <HardwareChart height={160} data={chart} fit={fit}
       kind={investment && period.mode === 'comparar' && config.dimension !== 'year' ?
         'grouped' : config.kind}
       unit={config.unit || (config.measure === 'value' ? 'usd' : 'number')} max={config.max}
