@@ -8,7 +8,7 @@ export const dateLabel = value => value ? new Date(value).toLocaleDateString('es
 }) : 'sin fecha';
 
 export default function SectionKpis({ tab, data, period, model }) {
-  const v = model.v3;
+  const v = model.v3, m = model.mesa;
   const current = (title, value, money = false, context, percent = false) =>
     <Kpi key={title} title={title} value={value} money={money} context={context} percent={percent} />;
   const flow = (title, measure, money = false) =>
@@ -34,6 +34,16 @@ export default function SectionKpis({ tab, data, period, model }) {
     {tab === 'compras' && <>
       {flow('Equipos comprados', 'equipment')}{flow('Valor de compra', 'value', true)}
       {current('Compras sin factura', measureRows(data, 'equipment', period).filter(row => !hasInvoice(row)).length)}
+      {m.deliveriesAvailable && current('Pedidos por entregar', m.openDeliveries, false, 'Pendientes o aprobados en la Mesa')}
+      {m.deliveriesAvailable && current('Entrega promedio · días', m.averageDelivery === null ? null : Math.round(m.averageDelivery), false, 'Del pedido a la entrega')}
+    </>}
+    {tab === 'seguros' && <>
+      {m.hasInsurance && <>
+        {current('Equipos asegurados', m.insuredPercent, false, 'de los equipos vigentes, póliza al día', true)}
+        {current('Valor sin asegurar', m.uninsuredValue, true, 'Valor de compra sin póliza vigente')}
+        {[30, 60, 90].map((days, index) => current(`Pólizas vencen en ${days} días`, m.expiring[index]))}
+      </>}
+      {current('Garantías vencen en 90 días', m.warrantySoon)}
     </>}
     {tab === 'bajas' && <>
       {flow('Bajas', 'disposals')}

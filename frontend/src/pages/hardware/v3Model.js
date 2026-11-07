@@ -2,6 +2,7 @@ import { aggregate, measureRows, sum } from './metrics.js';
 import { computer, computerState, completeness, daysSince, hasInvoice, licenseAnalysis, renewalBudget } from './v3Metrics.js';
 import { DEFAULT_PRICES } from './licensePrices.js';
 import { scopeLicenses } from './licenseScope.js';
+import { extendMesa, warrantyState } from './mesaModel.js';
 
 const equipmentColumns = [
   ['code', 'Código'], ['type', 'Tipo'], ['custodian', 'Custodio'], ['project', 'Proyecto'],
@@ -28,8 +29,7 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
     age: daysSince(row.purchaseDate, today) === null || row.purchaseDate?.startsWith('2000') ? 'Sin fecha' :
       `${Math.floor(daysSince(row.purchaseDate, today) / 365.25)} años`,
     repairDays: daysSince(row.usageDate, today),
-    warranty: daysSince(row.warrantyUntil, today) === null ? 'Sin dato' :
-      row.warrantyUntil.slice(0, 10) < today.toISOString().slice(0, 10) ? 'Vencida' : 'Vigente',
+    warranty: warrantyState(row, today),
   }));
   const stock = computers.filter(row => ['Backup / stock', 'Sin asignar (bodega)'].includes(row.equipmentState));
   const repair = computers.filter(row => row.equipmentState === 'En reparación');
@@ -152,6 +152,7 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
   model.v3 = { computers, stock, repair, quality, renewal, licenses, licenseScope, losses,
     audited: computers.filter(row => row.physicalState).length,
     lastAudit: computers.map(row => row.physicalStateDate).filter(Boolean).sort().at(-1) };
+  extendMesa(model, snapshot, data, period, today, equipmentColumns);
   if (filter?.customTable) model.tables[filter.section] = [filter.customTable];
   return model;
 }

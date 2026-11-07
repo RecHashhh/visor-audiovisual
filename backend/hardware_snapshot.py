@@ -213,11 +213,13 @@ def project_blocks(items, coverage):
     return {'byProject': list(projects.values()), 'laptopsByArea': [{'area': a, 'count': n} for a, n in areas.items()]}
 
 
-def quality_block(items, people, catalog):
+def quality_block(items, people, catalog, mesa_catalog=None):
     recover = [i for i in items if i.get('active') and i['cedula'] and i['cedula'] not in people]
     projects = defaultdict(int)
     for i in items:
         rip_code = project(i['ripProject'])['code']
+        if i.get('catalogMatch') or resolve_project(i['ripProject'], mesa_catalog or {}):
+            continue
         if i['cedula'] and (not rip_code or rip_code not in catalog):
             projects[i['ripProject'] or 'Sin proyecto'] += 1
     return {'recoverEquipment': recover, 'unmatchedProjects': [{'project': p, 'count': n} for p, n in projects.items()], 'withoutPurchaseDate': [i for i in items if i['year'] == 'sin fecha'], 'unassignedComputers': [i for i in items if i.get('active') and i['type'] in ('LAPTOP', 'CPU') and not i['cedula']]}
@@ -356,6 +358,70 @@ def durability_block(items, disposals, today):
     return {'byType': summary(months_by_type, 'type'), 'byReason': summary(months_by_reason, 'reason'), 'fleetAge': fleet}
 
 
+def site_catalog(mesa):
+    """Catálogo único de la Mesa (sitios + alias): nombre normalizado o código → proyecto homologado."""
+    index = {}
+    for site in mesa.get('sites') or []:
+        code = text(site.get('code') or site.get('gpCode'))
+        entry = {'code': code, 'name': text(site.get('name')) or 'Sin proyecto', 'homologated': True}
+        for key in [site.get('code'), site.get('gpCode'), site.get('name'), *(site.get('aliases') or [])]:
+            key = normalized(key)
+            if key:
+                index.setdefault(key, entry)
+    return index
+
+
+def resolve_project(value, catalog):
+    """Busca el proyecto libre de RIP_TIC en el catálogo de la Mesa: texto completo, sin código o por código."""
+    value = text(value)
+    if not value or not catalog:
+        return None
+    parsed = project(value)
+    for key in (value, parsed['name'], parsed['code']):
+        hit = catalog.get(normalized(key))
+        if hit:
+            return hit
+    return None
+
+
+def mesa_extras(items, mesa):
+    """Sede del custodio, póliza vigente y proyecto homologado con el catálogo de la Mesa (datos opcionales)."""
+    sites = {cedula(p.get('cedula')): p for p in mesa.get('payroll') or [] if p.get('site') or p.get('city')}
+    policies = {}
+    for row in mesa.get('insurance') or []:
+        key = text(row.get('itemCode')).upper()
+        if key and text(row.get('to')) >= text(policies.get(key, {}).get('to')):
+            policies[key] = row
+    catalog = site_catalog(mesa)
+    for item in items:
+        place = sites.get(item['cedula']) or {}
+        item['site'] = text(place.get('site')) or None
+        item['city'] = text(place.get('city')) or None
+        item['siteKind'] = text(place.get('siteKind')) or None
+        policy = policies.get(text(item.get('code')).upper())
+        if policy:
+            item.update(insurer=text(policy.get('insurer')) or None, policy=text(policy.get('policy')) or None,
+                        insuredFrom=day(policy.get('from')) and str(day(policy.get('from'))),
+                        insuredTo=day(policy.get('to')) and str(day(policy.get('to'))),
+                        insuredValue=float(policy.get('insuredValue') or 0))
+        if not item['project'].get('homologated'):
+            hit = resolve_project(item.get('ripProject'), catalog)
+            if hit:
+                item['project'], item['catalogMatch'] = hit, True
+    return catalog
+
+
+def deliveries_block(mesa):
+    """Equipos pedidos por ticket en la Mesa: Pendiente → Aprobado → Entregado / Rechazado."""
+    rows = []
+    for row in mesa.get('deliveries') or []:
+        created, delivered = day(row.get('createdAt')), day(row.get('deliveredAt'))
+        rows.append({**row, 'state': text(row.get('state')) or 'Pendiente', 'itemType': normalized(row.get('itemType')) or 'SIN TIPO',
+                     'createdAt': created and str(created), 'deliveredAt': delivered and str(delivered),
+                     'deliveryDays': (delivered - created).days if created and delivered else None})
+    return rows
+
+
 def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None, today=None, target_areas=None):
     mesa, today = mesa or {}, today or date.today()
     target_areas = [normalized(a) for a in (target_areas or TARGET_AREAS)]
@@ -376,6 +442,7 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
     for item in items:
         item['inPayroll'] = item['cedula'] in people
         item['equipmentState'] = computer_state(item)
+    mesa_catalog = mesa_extras(items, mesa)
     blocks = equipment_blocks(items, mesa.get('disposals', []), mesa.get('disposalRequests', []), today.year)
     coverage = coverage_block(people, items, mesa, users or [], skus or [], target_areas)
     count = len(coverage['people'])
@@ -391,4 +458,4 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
     ])
     blocks['licenses']['accounts'] = license_accounts(users or [], skus or [], contacts)
     blocks['costCenters'] = cost_center_block(people, items, mesa)
-    return {'generatedAt': datetime.now(timezone.utc).isoformat(), 'kpis': kpis, **blocks, **project_blocks(items, coverage), 'coverage': coverage, 'quality': quality_block(items, people, catalog), 'sources': sources or {}, 'items': items, 'payrollUploaded': payroll is not None}
+    return {'generatedAt': datetime.now(timezone.utc).isoformat(), 'kpis': kpis, **blocks, **project_blocks(items, coverage), 'coverage': coverage, 'quality': quality_block(items, people, catalog, mesa_catalog), 'deliveries': deliveries_block(mesa), 'catalogSites': len({(v['code'], v['name']) for v in mesa_catalog.values()}), 'sources': sources or {}, 'items': items, 'payrollUploaded': payroll is not None}

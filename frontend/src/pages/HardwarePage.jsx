@@ -28,6 +28,7 @@ import './HardwarePage.css';
 
 const TABS = [
   ['resumen', 'Resumen'], ['estado', 'Estado de equipos'], ['compras', 'Compras'], ['bajas', 'Bajas y vida útil'],
+  ['seguros', 'Seguros y garantías'],
   ['personas', 'Personas'], ['licencias', 'Licencias'], ['proyectos', 'Proyectos'],
   ['calidad', 'Calidad de datos'], ['explorar', 'Explorar'],
 ];
