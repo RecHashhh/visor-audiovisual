@@ -35,7 +35,7 @@ export default function FixedCard({ config: original, data, period, onDrill, fit
         className={unit === key ? 'active' : ''} onClick={() => setUnit(key)}>{label}</button>
     ))}
   </div>;
-  return <Card title={title} onDetail={() => onDrill(config)} actions={units}>
+  return <Card title={title} onDetail={() => onDrill(config)} actions={units} wide={config.wide}>
     <HardwareChart height={160} data={chart} fit={fit}
       kind={investment && period.mode === 'comparar' && config.dimension !== 'year' ?
         'grouped' : config.kind}

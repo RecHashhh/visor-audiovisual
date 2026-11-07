@@ -56,8 +56,27 @@ export function extendMesa(model, snapshot, data, period, today, equipmentColumn
   const expiring = insured.filter(row => row.policyDays <= 90).sort((a, b) => a.policyDays - b.policyDays);
   const warrantySoon = active.filter(row => row.warranty === 'Vence en 90 días').sort((a, b) => a.warrantyDays - b.warrantyDays);
 
+  // Calendario de vencimientos: 26 semanas desde el lunes actual, pólizas y garantías por semana.
+  const monday = new Date(today); monday.setHours(0, 0, 0, 0); monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const weekOf = value => {
+    const days = daysUntil(value, monday);
+    return days === null || days < 0 || days >= 26 * 7 ? null :
+      new Date(+monday + Math.floor(days / 7) * 7 * 86400000).toISOString().slice(0, 10);
+  };
+  const due = [
+    ...insured.map(row => ({ ...row, expiryKind: 'Pólizas', expiryWeek: weekOf(row.insuredTo) })),
+    ...active.map(row => ({ ...row, expiryKind: 'Garantías', expiryWeek: row.warranty === 'Sin dato' ? null : weekOf(row.warrantyUntil) })),
+  ].filter(row => row.expiryWeek);
+  const weeks = Array.from({ length: 26 }, (_, i) => new Date(+monday + i * 7 * 86400000).toISOString().slice(0, 10));
+  const calendarCard = card('Vencimientos de las próximas 26 semanas', 'seguros', due, 'expiryWeek', {
+    kind: 'calendar', wide: true,
+    chart: [...(hasInsurance ? ['Pólizas'] : []), 'Garantías'].map(kind => ({ label: kind,
+      weeks: weeks.map(week => ({ week, count: due.filter(row => row.expiryKind === kind && row.expiryWeek === week).length })) })),
+  });
+
   // Seguros y garantías
   model.cards.seguros = [
+    ...(due.length ? [calendarCard] : []),
     ...(hasInsurance ? [
       card('Seguro de equipos vigentes', 'seguros', active, 'insuranceState', {
         chart: ordered(aggregate(active, 'insuranceState'), INSURANCE_ORDER) }),
@@ -67,7 +86,6 @@ export function extendMesa(model, snapshot, data, period, today, equipmentColumn
     ] : []),
     card('Garantía de equipos vigentes', 'seguros', active, 'warranty', {
       chart: ordered(aggregate(active, 'warranty'), ['Vence en 90 días', 'Vigente', 'Vencida', 'Sin dato']) }),
-    card('Garantías que vencen en 90 días por proyecto', 'seguros', warrantySoon, 'project'),
   ];
   model.tables.seguros = [
     ...(hasInsurance ? [table('policies-expiring', 'Pólizas por vencer (90 días)', expiring),

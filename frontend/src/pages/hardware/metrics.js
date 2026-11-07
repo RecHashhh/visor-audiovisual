@@ -552,7 +552,7 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
   }
   const personCard = {
     ...config('Estado del personal objetivo', 'people', 'status'), chart: states,
-    kind: 'funnel',
+    kind: 'waffle', // un cuadro por persona: se lee la proporción de un vistazo
     note: 'Cada persona cuenta en el primer requisito que le falta.',
   };
   const ageCard = {

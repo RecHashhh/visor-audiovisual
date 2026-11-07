@@ -2,8 +2,8 @@ import HardwareChart, { number, usd } from '../../components/charts/HardwareChar
 import { Table } from './HardwareTable';
 import { comparison, explore, periodYears } from './metrics';
 
-export function Card({ title, onDetail, actions, children }) {
-  return <section className="hw-card">
+export function Card({ title, onDetail, actions, wide = false, children }) {
+  return <section className={`hw-card${wide ? ' hw-card-wide' : ''}`}>
     <header>
       <h3>{title}</h3>
       {actions}
@@ -35,7 +35,7 @@ export function DataCard({ config, data, period, onSelect, onDetail, children, f
     !['people', 'licenses'].includes(config.measure);
   const kind = compare && config.dimension !== 'year' && config.kind !== 'line' ?
     'grouped' : config.kind;
-  return <Card title={config.name} onDetail={onDetail}>
+  return <Card title={config.name} onDetail={onDetail} wide={config.wide}>
     {children}
     {config.kind === 'table' ? <Table title={config.name} rows={rows}
       columns={[

@@ -209,8 +209,8 @@ export default function HardwarePage() {
 
   // Tablero ajustado a la ventana: las tarjetas reparten el alto libre, sin scroll ni hueco abajo.
   const cardsRef = useRef(null);
-  const cardCount = model.cards[tab]?.length || 0;
   const cardCols = window.innerWidth <= 700 ? 1 : window.innerWidth <= 1200 ? 2 : 3;
+  const cardCount = (model.cards[tab] || []).reduce((cells, config) => cells + (config.wide && cardCols > 1 ? 2 : 1), 0);
   const cardRows = Math.max(1, Math.ceil(cardCount / cardCols));
   const fitCards = !!snapshot && tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') &&
     cardCols > 1 && !(tab === 'resumen' && views.length);

@@ -7,6 +7,7 @@ export const number = value => new Intl.NumberFormat('es-CO', {
   maximumFractionDigits: 0,
 }).format(value || 0);
 export const usd = value => '$' + number(value);
+const MONTHS_SHORT = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 export const PALETTE = [
   '#2f6fdb', '#f59e0b', '#10a37f', '#e5484d',
   '#8b5cf6', '#64748b', '#ec4899', '#14b8a6',
@@ -61,6 +62,91 @@ export default function HardwareChart({
     const format = unit === 'usd' ? usd : number;
     const horizontal = ['horizontal', 'funnel'].includes(kind);
     const fullLabel = value => /^[A-Z_ ]+$/.test(String(value)) ? typeLabel(value) : String(value);
+    const select = row => onSelect?.(row.label, row.seriesName, row);
+    const describe = row => {
+      const detail = row.seriesName ? ` · ${row.seriesName}` : '';
+      const other = row.tooltipSeries?.[row.seriesName] || row.tooltip;
+      return `${row.label}${detail}: ${format(row.count)}${other ? ' · ' + other : ''}`;
+    };
+    const accessible = selection => selection.attr('tabindex', 0)
+      .attr('role', 'button').attr('aria-label', describe)
+      .on('mouseenter focus', (_, row) => setTip(describe(row)))
+      .on('mouseleave blur', () => setTip(''))
+      .on('click', (_, row) => select(row))
+      .on('keydown', (event, row) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          select(row);
+        }
+      });
+    const ink = css.getPropertyValue('--text').trim() || '#14172b';
+    const fitHeight = Math.max(120, target);
+
+    // Waffle: un cuadro por unidad (persona), color por estado; leyenda con cifras a la derecha.
+    if (kind === 'waffle') {
+      const total = d3.sum(data, row => row.count) || 1;
+      const legendWidth = width >= 360 ? Math.min(210, width * .42) : 0;
+      const gridWidth = width - legendWidth - (legendWidth ? 14 : 0);
+      const gridHeight = legendWidth ? fitHeight - 4 : fitHeight - 22 * data.length;
+      let cols = Math.max(10, Math.round(Math.sqrt(total * gridWidth / Math.max(40, gridHeight))));
+      let size = Math.min(gridWidth / cols, gridHeight / Math.ceil(total / cols));
+      while (Math.ceil(total / cols) * size > gridHeight && cols < total) { cols += 1; size = gridWidth / cols; }
+      const gap = size > 7 ? 1.5 : 1;
+      const cells = data.flatMap(row => d3.range(row.count).map(() => row));
+      root.attr('viewBox', `0 0 ${width} ${fitHeight}`).attr('height', fitHeight);
+      accessible(root.append('g').selectAll('rect').data(cells).join('rect')
+        .attr('x', (_, i) => (i % cols) * size).attr('y', (_, i) => Math.floor(i / cols) * size)
+        .attr('width', Math.max(1, size - gap)).attr('height', Math.max(1, size - gap)).attr('rx', size > 8 ? 1.5 : 0)
+        .attr('fill', row => row.color || PALETTE[data.indexOf(row) % PALETTE.length]))
+        .attr('tabindex', (_, i) => i === 0 ? 0 : -1); // un solo punto de tabulación; la leyenda también es navegable
+      const legend = root.append('g').attr('transform', legendWidth ?
+        `translate(${gridWidth + 14},${Math.max(0, (fitHeight - data.length * 22) / 2)})` :
+        `translate(0,${Math.ceil(total / cols) * size + 8})`);
+      const item = accessible(legend.selectAll('g').data(data).join('g')
+        .attr('transform', (_, i) => `translate(0,${i * 22})`).style('cursor', 'pointer'));
+      item.append('rect').attr('width', 10).attr('height', 10).attr('y', 3).attr('rx', 2)
+        .attr('fill', (row, i) => row.color || PALETTE[i % PALETTE.length]);
+      item.append('text').attr('x', 16).attr('y', 12).attr('fill', 'currentColor').style('font-size', '11px')
+        .text(row => truncateText(fullLabel(row.label), (legendWidth || width) - 70, value => {
+          const probe = root.append('text').style('font-size', '11px').text(value);
+          const length = probe.node().getComputedTextLength(); probe.remove(); return length;
+        }));
+      item.append('text').attr('x', (legendWidth || width) - 4).attr('y', 12).attr('text-anchor', 'end')
+        .attr('fill', ink).style('font-size', '11px').style('font-weight', 700)
+        .text(row => `${format(row.count)} · ${Math.round(100 * row.count / total)} %`);
+      return;
+    }
+
+    // Calendario: filas (pólizas, garantías) × semanas; intensidad = cantidad que vence esa semana.
+    if (kind === 'calendar') {
+      const weeks = data[0]?.weeks?.length || 0;
+      const labelWidth = 70, gap = 3;
+      const cellWidth = Math.max(4, (width - labelWidth - gap * (weeks - 1)) / weeks);
+      const cellHeight = Math.max(14, Math.min(40, (fitHeight - 22 - gap * (data.length - 1)) / data.length));
+      const height = data.length * (cellHeight + gap) + 20;
+      const peak = d3.max(data.flatMap(row => row.weeks.map(week => week.count))) || 1;
+      const accent = css.getPropertyValue('--accent').trim() || '#192d96';
+      const empty = css.getPropertyValue('--bg3').trim() || '#eef0f5';
+      const shade = d3.scaleSequential(d3.interpolateRgb(d3.color(accent).copy({ opacity: .18 }) + '', accent)).domain([1, peak]);
+      root.attr('viewBox', `0 0 ${width} ${height}`).attr('height', height);
+      data.forEach((row, r) => {
+        const y = r * (cellHeight + gap);
+        root.append('text').attr('x', 0).attr('y', y + cellHeight / 2 + 4).attr('fill', 'currentColor')
+          .style('font-size', '11px').text(row.label);
+        accessible(root.append('g').selectAll('rect')
+          .data(row.weeks.map(week => ({ ...week, label: week.week, seriesName: row.label })))
+          .join('rect').attr('x', (_, i) => labelWidth + i * (cellWidth + gap)).attr('y', y)
+          .attr('width', cellWidth).attr('height', cellHeight).attr('rx', 2)
+          .attr('fill', week => week.count ? shade(week.count) : empty));
+      });
+      const months = data[0].weeks.map((week, i) => ({ week, i })).filter(({ week }, i) =>
+        i === 0 || week.week.slice(5, 7) !== data[0].weeks[i - 1].week.slice(5, 7));
+      root.append('g').selectAll('text').data(months).join('text')
+        .attr('x', ({ i }) => labelWidth + i * (cellWidth + gap)).attr('y', height - 4)
+        .attr('fill', 'currentColor').style('font-size', '10px')
+        .text(({ week }) => MONTHS_SHORT[Number(week.week.slice(5, 7)) - 1]);
+      return;
+    }
     const probe = root.append('text').style('font-size', '10px').attr('visibility', 'hidden');
     const measure = text => { probe.text(text); return probe.node().getComputedTextLength(); };
     const labels = data.map(row => fullLabel(row.label));
@@ -122,23 +208,6 @@ export default function HardwareChart({
       .select('text').style('text-anchor', 'end');
 
 
-    const select = row => onSelect?.(row.label, row.seriesName, row);
-    const describe = row => {
-      const detail = row.seriesName ? ` · ${row.seriesName}` : '';
-      const other = row.tooltipSeries?.[row.seriesName] || row.tooltip;
-      return `${row.label}${detail}: ${format(row.count)}${other ? ' · ' + other : ''}`;
-    };
-    const accessible = selection => selection.attr('tabindex', 0)
-      .attr('role', 'button').attr('aria-label', describe)
-      .on('mouseenter focus', (_, row) => setTip(describe(row)))
-      .on('mouseleave blur', () => setTip(''))
-      .on('click', (_, row) => select(row))
-      .on('keydown', (event, row) => {
-        if (event.key === 'Enter' || event.key === ' ') {
-          event.preventDefault();
-          select(row);
-        }
-      });
 
     if (kind === 'line') {
       (keys.length ? keys : ['']).forEach((key, index) => {

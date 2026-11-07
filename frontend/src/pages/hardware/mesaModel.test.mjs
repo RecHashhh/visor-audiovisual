@@ -20,7 +20,7 @@ test('sin datos de la Mesa: no agrega sede, seguros ni pedidos', () => {
   assert.equal(model.mesa.hasInsurance, false);
   assert.equal(model.cards.proyectos.length, 0);
   assert.equal(model.cards.compras.length, 0);
-  assert.deepEqual(model.cards.seguros.map(card => card.name), ['Garantía de equipos vigentes', 'Garantías que vencen en 90 días por proyecto']);
+  assert.deepEqual(model.cards.seguros.map(card => card.name), ['Garantía de equipos vigentes']);
 });
 
 test('con datos: KPI de seguros, sede y pedidos del período', () => {
@@ -41,4 +41,9 @@ test('con datos: KPI de seguros, sede y pedidos del período', () => {
   assert.equal(model.mesa.averageDelivery, 10);
   assert.equal(model.tables.proyectos[0].rows.find(row => row.site === 'Loja').laptops, 1);
   assert.deepEqual(model.cards.compras[0].chart.map(row => row.label), ['Aprobado', 'Entregado']);
+  const calendar = model.cards.seguros[0];
+  assert.equal(calendar.kind, 'calendar');
+  assert.deepEqual(calendar.chart.map(row => row.label), ['Pólizas', 'Garantías']);
+  assert.equal(calendar.chart[0].weeks.length, 26);
+  assert.equal(calendar.chart[0].weeks[2].count, 1); // póliza al 20-nov: semana del 16-nov (lunes 2, 9, 16)
 });
