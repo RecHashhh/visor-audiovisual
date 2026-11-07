@@ -15,7 +15,7 @@
 .hw-page h3 { font-size: 13px; margin: 0 0 8px; }
 .hw-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .hw-chart { min-width: 0; }
-.hw-chart svg { width: 100%; display: block; overflow: visible; }
+.hw-chart svg { width: 100%; display: block; overflow: hidden; }
 .hw-chart rect[tabindex], .hw-chart circle { cursor: pointer; }
 .hw-chart [tabindex]:focus { outline: 2px solid var(--text); outline-offset: 2px; }
 .hw-tooltip { min-height: 17px; color: var(--text-dim); font-size: 11px; }
@@ -39,6 +39,7 @@
 .hw-tabs { margin-right: auto; flex-wrap: wrap; }
 .hw-tabs .segmented-btn { padding: 6px 12px; font-size: 12px; }
 .hw-kpis-exec { grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 12px 0; }
+.hw-kpis-seven { grid-template-columns: repeat(7, minmax(0, 1fr)); }
 .hw-kpis-exec > div { background: var(--bg2); padding: 12px 14px; gap: 4px; }
 .hw-kpis-exec strong { font-size: 24px; line-height: 1.1; }
 .hw-kpis-exec small { color: var(--text-dim); font-size: 11px; }
@@ -55,3 +56,56 @@
 .hw-filters select { max-width: 190px; }
 .hw-filters label { font-size: 12px; color: var(--text-dim); }
 .hw-table-section small { margin-left: 6px; }
+.hw-period { margin: 0; }
+.hw-view-controls { margin-top: 12px; }
+.hw-table-index { display: flex; flex-wrap: wrap; gap: 8px 18px; margin: 14px 0; }
+.hw-table-index a { color: var(--accent); font-size: 12px; }
+.hw-table-index ~ div[id] { scroll-margin-top: 150px; }
+.hw-asof { display: block; color: var(--text-dim); margin: 4px 0; }
+.hw-personal { margin-top: 20px; }
+.hw-card-actions { padding: 8px 0; }
+.hw-explorer { align-items: flex-end; margin: 16px 0; }
+.hw-explorer label { flex-direction: column; align-items: flex-start; }
+.hw-dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  background: #0008;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+}
+.hw-dialog {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 24px;
+  width: min(90vw, 540px);
+}
+.hw-dialog textarea {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--bg2);
+  color: var(--text);
+  padding: 10px;
+  margin: 8px 0 16px;
+}
+.hw-dialog p { font-size: 13px; }
+
+.hw-page { padding: 0; }
+.main:has(> .hw-page) { padding-bottom: 12px; }
+.hw-card { height: 244px; box-sizing: border-box; overflow: hidden; }
+.hw-card > small { display: block; font-size: 10px; color: var(--text-dim); }
+.hw-explorer-preview { width: 100%; margin: 12px 0; }
+.hw-explorer-preview .hw-card { height: auto; min-height: 270px; }
+.hw-kpis-exec > div { min-width: 0; }
+.hw-kpis-exec strong { font-size: clamp(18px, 1.7vw, 24px); }
+
+/* Las tarjetas crecen con ejes y leyendas; el texto permanece dentro del ancho. */
+.hw-card { height: auto; min-height: 244px; }
+.hw-card > header h3 { min-width: 0; overflow-wrap: anywhere; }
+.hw-legend span { min-width: 0; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.hw-tooltip, .hw-company-help { overflow-wrap: anywhere; }
+.hw-company-help { font-size: 12px; color: var(--text-dim); }
+.hw-company-rows { max-height: 40vh; overflow-y: auto; }
+.hw-dialog { max-height: 90vh; overflow-y: auto; box-sizing: border-box; }
+.hw-dialog > label { display: block; margin: 12px 0; }

@@ -107,6 +107,14 @@ async function apiFetchBlob(path, options = {}) {
 
 export const api = {
   getHardware: () => apiFetch('/api/hardware'),
+  getHardwareSettings: () => apiFetch('/api/hardware/settings'),
+  saveHardwareSettings: body => apiFetch('/api/hardware/settings', {
+    method: 'POST', body: JSON.stringify(body),
+  }),
+  getHardwareViews: () => apiFetch('/api/hardware/views'),
+  saveHardwareViews: views => apiFetch('/api/hardware/views', {
+    method: 'POST', body: JSON.stringify({ views }),
+  }),
   refreshHardware: () => apiFetch('/api/hardware/refresh', { method: 'POST' }),
   uploadHardwarePayroll: file => apiFetch('/api/hardware/nomina', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file }),
   // Etiquetas de clasificación de Obra (sin caché de cliente).

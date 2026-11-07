@@ -23,7 +23,7 @@ def fetch_graph(token_provider):
     deadline = time.monotonic() + 65
     result = {'users': [], 'skus': []}
     errors = []
-    for key, endpoint in [('users', '/users?$select=userPrincipalName,mail,proxyAddresses,accountEnabled,assignedLicenses&$top=999'), ('skus', '/subscribedSkus')]:
+    for key, endpoint in [('users', '/users?$select=userPrincipalName,mail,proxyAddresses,accountEnabled,assignedLicenses,signInActivity,createdDateTime,usageLocation&$top=999'), ('skus', '/subscribedSkus')]:
         url = 'https://graph.microsoft.com/v1.0' + endpoint
         try:
             while url:
@@ -33,6 +33,11 @@ def fetch_graph(token_provider):
                 if not url.startswith('https://graph.microsoft.com/'):
                     raise ValueError('Paginación de Graph inválida')
                 response = requests.get(url, headers={'Authorization': 'Bearer ' + token}, timeout=(3, min(12, remaining)))
+                if key == 'users' and not response.ok and 'signInActivity' in url:
+                    result['signInError'] = 'No se pudo consultar signInActivity; actividad desconocida'
+                    result[key] = []
+                    url = 'https://graph.microsoft.com/v1.0' + endpoint.replace(',signInActivity', '')
+                    continue
                 response.raise_for_status()
                 data = response.json()
                 result[key].extend(data['value'])
@@ -67,6 +72,8 @@ def refresh(read_payroll, mesa_url, mesa_token, token_provider, target_areas=Non
             value = job.result()
             values[name] = value['people'] if name == 'nomina' else value
             sources[name] = {'generatedAt': value.get('generatedAt') or datetime.now(timezone.utc).isoformat(), 'counts': {k: len(v) for k, v in value.items() if isinstance(v, list)}}
+            if value.get('signInError'):
+                sources[name]['signInError'] = value['signInError']
             if value.get('error'):
                 sources[name]['error'] = value['error']
         except Exception as exc:

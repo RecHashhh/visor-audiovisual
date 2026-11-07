@@ -1346,7 +1346,16 @@ def require_blob_access(req: func.HttpRequest, blob_path: str):
     """Gate por ruta de blob: los paths de _media se controlan por sección + carpeta;
     el resto son proyectos (proyectos + código de proyecto)."""
     if (blob_path or "").strip('/').startswith(CONFIG_PREFIX.strip('/') + '/hardware/'):
-        return require_perms(req, cap="hardware")
+        perms, error = require_perms(req, cap="hardware")
+        if error is not None:
+            return perms, error
+        views_prefix = f"{CONFIG_PREFIX.strip('/')}/hardware/views/"
+        if blob_path.strip('/').startswith(views_prefix):
+            email = (get_caller(req) or {}).get("email")
+            own_path = f"{views_prefix}{_safe_user_key(email)}.json" if email else None
+            if blob_path.strip('/') != own_path:
+                return None, err("Las vistas personales pertenecen a otro usuario", 403)
+        return perms, None
     seg = [s for s in (blob_path or "").split("/") if s]
     if seg and seg[0] == MEDIA_PREFIX.strip("/"):
         if len(seg) < 3:
@@ -4583,6 +4592,61 @@ def hardware_get(req: func.HttpRequest) -> func.HttpResponse:
         except Exception:
             logging.exception("hardware_get: renovación automática")
     return ok(_hardware_cached) if _hardware_cached is not None else err("Aún no hay foto de Hardware. Pulsa Actualizar ahora.", 404)
+
+
+def _hardware_preferences(req, resource):
+    if req.method == "OPTIONS":
+        return options_ok()
+    _, error = require_perms(req, cap="hardware")
+    if error is not None:
+        return error
+    from hardware_preferences import (
+        DEFAULT_EXCLUDED_POSITIONS, DEFAULT_GROUP_COMPANIES, LICENSE_PRICES, validate_settings, validate_views,
+    )
+    if resource == "settings":
+        name = "settings.json"
+        default = validate_settings({"excludedPositions": DEFAULT_EXCLUDED_POSITIONS.copy(),
+                                     "licensePrices": LICENSE_PRICES.copy(),
+                                     "groupCompanies": DEFAULT_GROUP_COMPANIES})
+        validate = validate_settings
+    else:
+        caller = get_caller(req) or {}
+        email = caller.get("email")
+        if not email:
+            return err("No se pudo identificar al usuario", 401)
+        name = f"views/{_safe_user_key(email)}.json"
+        default = {"views": []}
+        validate = validate_views
+    path = f"{CONFIG_PREFIX.strip('/')}/hardware/{name}"
+    try:
+        if req.method == "GET":
+            data = load_json_blob(path)
+            return ok(default if data is None else validate(data))
+        payload = req.get_json()
+        data = validate(payload)
+        def merge(previous):
+            if resource != "settings":
+                return data
+            # Reaplicar el parche en cada reintento ETag conserva otras preferencias.
+            return validate({**(previous or default), **payload})
+        return ok(update_json_blob(path, merge))
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except RuntimeError as exc:
+        return err(str(exc), 409)
+    except Exception:
+        logging.exception("hardware_%s", resource)
+        return err("No se pudieron cargar o guardar las preferencias", 500)
+
+
+@app.route(route="hardware/settings", methods=["GET", "POST", "OPTIONS"])
+def hardware_settings(req: func.HttpRequest) -> func.HttpResponse:
+    return _hardware_preferences(req, "settings")
+
+
+@app.route(route="hardware/views", methods=["GET", "POST", "OPTIONS"])
+def hardware_views(req: func.HttpRequest) -> func.HttpResponse:
+    return _hardware_preferences(req, "views")
 
 
 @app.route(route="hardware/refresh", methods=["POST", "OPTIONS"])

@@ -1,4 +1,5 @@
 """Cálculo de Hardware: datos de entrada inyectados, sin acceso a red."""
+from hardware_v3 import computer_state, license_accounts
 import re
 import unicodedata
 from collections import defaultdict
@@ -131,7 +132,7 @@ def prepare_equipment(mesa, people):
             companies = [companies]
         area = person.get('area') if person else ''
         area = area if area in AREAS else ('fuera de nómina' if key else 'sin asignar/bodega')
-        rows.append({**item, 'type': normalized(item.get('type')), 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'assignmentDate': a.get('date'), 'ripProject': text(a.get('projectName') or a.get('projectCode')), 'custodian': custodians.get(key, {}).get('name') or (person or {}).get('name', '')})
+        rows.append({**item, 'type': normalized(item.get('type')), 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': text(a.get('projectName') or a.get('projectCode')), 'custodian': custodians.get(key, {}).get('name') or (person or {}).get('name', '')})
     return rows
 
 
@@ -372,6 +373,9 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
             fallback = project(p.get('costCenter'))
             assignment_people[key] = {**p, 'area': '', 'project': catalog.get(fallback['code'], fallback)}
     items = prepare_equipment(mesa, assignment_people)
+    for item in items:
+        item['inPayroll'] = item['cedula'] in people
+        item['equipmentState'] = computer_state(item)
     blocks = equipment_blocks(items, mesa.get('disposals', []), mesa.get('disposalRequests', []), today.year)
     coverage = coverage_block(people, items, mesa, users or [], skus or [], target_areas)
     count = len(coverage['people'])
@@ -380,5 +384,11 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
     blocks['purchasesBySupplier'] = supplier_block(items, mesa.get('suppliers', []))
     blocks['durability'] = durability_block(items, mesa.get('disposals', []), today)
     blocks['licenses'] = license_block(users or [], skus or [], coverage['people'])
+    contacts = email_index([
+        {'userPrincipalName': p.get('email'), **people[cedula(p.get('cedula'))]}
+        for p in [*mesa.get('custodians', []), *mesa.get('payroll', [])]
+        if cedula(p.get('cedula')) in people
+    ])
+    blocks['licenses']['accounts'] = license_accounts(users or [], skus or [], contacts)
     blocks['costCenters'] = cost_center_block(people, items, mesa)
     return {'generatedAt': datetime.now(timezone.utc).isoformat(), 'kpis': kpis, **blocks, **project_blocks(items, coverage), 'coverage': coverage, 'quality': quality_block(items, people, catalog), 'sources': sources or {}, 'items': items, 'payrollUploaded': payroll is not None}

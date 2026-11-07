@@ -1,0 +1,15 @@
+.ss-root { position: relative; width: 190px; max-width: 100%; min-width: 0; font-size: 12px; }
+.ss-root > input { width: 100%; box-sizing: border-box; padding: 6px 9px; border: 1px solid var(--border); background: var(--bg); color: var(--text); border-radius: 5px; font: inherit; min-height: 29px; }
+.ss-root:focus-within { z-index: 10; }
+.ss-popup { position: absolute; top: 100%; left: 0; width: 100%; box-sizing: border-box; z-index: 30; background: var(--bg); color: var(--text); border: 1px solid var(--border); border-radius: 5px; box-shadow: 0 4px 14px #0003; }
+.ss-popup ul { list-style: none; margin: 0; padding: 3px; max-height: 260px; overflow-y: auto; }
+.ss-option { display: flex; gap: 8px; padding: 7px; cursor: pointer; border-radius: 3px; }
+.ss-option:hover, .ss-active { background: var(--bg2); outline: 1px solid var(--border); }
+.ss-option[aria-selected="true"] { font-weight: 700; }
+.ss-option-label { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.ss-count { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.ss-group, .ss-notice { padding: 7px; font-size: 11px; color: var(--text-dim); }
+.ss-group { font-weight: 700; }
+.ss-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+.ss-chip { max-width: 100%; overflow-wrap: anywhere; border: 1px solid var(--border); background: var(--bg2); color: var(--text); border-radius: 12px; font: inherit; }
+.ss-option mark { background: #ffdb7080; color: inherit; }
