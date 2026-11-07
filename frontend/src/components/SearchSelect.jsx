@@ -27,8 +27,10 @@ export default function SearchSelect({ options, value, onChange, multiple = fals
   useEffect(() => {
     if (!open) return;
     const rect = host.current.getBoundingClientRect();
-    const width = Math.min(Math.max(rect.width, 240), window.innerWidth - 32);
-    setPopupLeft(Math.min(0, window.innerWidth - 16 - rect.left - width));
+    // Px de pantalla → px del componente cuando la página tiene zoom (Hardware en monitores grandes).
+    const zoom = host.current.currentCSSZoom || 1;
+    const width = Math.min(Math.max(rect.width / zoom, 240), (window.innerWidth - 32) / zoom);
+    setPopupLeft(Math.min(0, (window.innerWidth - 16 - rect.left) / zoom - width));
     input.current?.focus();
   }, [open]);
   useEffect(() => {

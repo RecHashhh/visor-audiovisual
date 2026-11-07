@@ -22,8 +22,11 @@ export function Table({
   useLayoutEffect(() => {
     if (!fill) return undefined;
     const fit = () => {
-      const top = scroller.current?.getBoundingClientRect().top;
-      if (top != null) setMaxHeight(Math.max(260, Math.floor(window.innerHeight - top - 20)));
+      const el = scroller.current;
+      if (!el) return;
+      // Con zoom (monitores grandes) el rectángulo viene en px de pantalla; el alto se aplica sin zoom.
+      const zoom = el.currentCSSZoom || 1;
+      setMaxHeight(Math.max(260, Math.floor((window.innerHeight - el.getBoundingClientRect().top - 20) / zoom)));
     };
     fit();
     window.addEventListener('resize', fit);
