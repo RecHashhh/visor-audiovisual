@@ -538,11 +538,10 @@ export default function GalleryPage({ collection = null, onRemove, originLabel }
                       {collection ? (p === 'img' ? 'Fotos' : 'Videos') : p} ({files.filter(f => collection ? kindOf(f.name) === p : prefixOf(f.name) === p).length})
                     </button>
                   ))}
+                  {collection && <select className="fav-order-select" aria-label="Ordenar colección" title="Ordenar" value={order} onChange={e => setOrder(e.target.value)}>
+                    <option value="date">Recientes</option><option value="project">Proyecto</option>
+                  </select>}
                 </div>
-
-                {collection && <select className="field-input" aria-label="Ordenar colección" value={order} onChange={e => setOrder(e.target.value)}>
-                  <option value="date">Fecha agregada</option><option value="project">Proyecto</option>
-                </select>}
                 {!collection && <div className="gallery-toolbar" style={{ marginTop: 8 }}>
                   <button className={`filter-chip ${sizeFilter === 'all' ? 'active' : ''}`} onClick={() => setSizeFilter('all')}>
                     Cualquier tamaño ({files.length})

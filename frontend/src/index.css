@@ -2739,6 +2739,19 @@ textarea.field-input { resize: vertical; min-height: 60px; font-family: var(--fo
 .fav-strip-more:hover { border-color: var(--accent); color: var(--accent); }
 .fav-strip-more-plus { font-size: 1.3rem; font-weight: 700; }
 .fav-back { margin-bottom: 12px; }
+/* Detalle de una colección: misma tarjeta que la lista, sin fondo vacío */
+.fav-detail {
+  background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg);
+  padding: 14px 16px 16px;
+}
+.fav-detail > .fav-col-bar { padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+/* Orden compacto: pocas opciones, ancho según el texto */
+.fav-order-select {
+  width: auto; margin-left: auto; padding: 6px 28px 6px 12px;
+  background: var(--bg3); border: 1px solid var(--border); border-radius: 99px;
+  font-size: 0.75rem; color: var(--text-dim); font-family: var(--font-body); cursor: pointer;
+}
+.fav-order-select:hover, .fav-order-select:focus { border-color: var(--accent-dim); color: var(--accent); outline: none; }
 
 /* ── Descargas: barra de seleccion + checkbox + toast ── */
 .gallery-selbar {

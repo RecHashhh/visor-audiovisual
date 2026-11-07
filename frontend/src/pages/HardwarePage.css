@@ -123,3 +123,8 @@
 .hw-license-utilization meter { width: 70px; height: 9px; accent-color: var(--accent); }
 .hw-license-utilization span { min-width: 38px; text-align: right; }
 .hw-license-note { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0 14px 10px; color: var(--text-dim); font-size: 11px; }
+
+/* Fondo de página: misma tarjeta que Favoritos, sin espacio gris vacío alrededor. */
+.hw-page { background: var(--bg2); border: 1px solid var(--border); border-radius: var(--radius-lg); padding: 14px 16px 16px; }
+.hw-page > .hw-toolbar:first-child { padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.hw-filters { background: var(--bg2); }
