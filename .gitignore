@@ -16,3 +16,6 @@ a.py
 
 # Originales de marca (la app usa las versiones de frontend/public/brands/)
 /RIPCONCIV_*.png
+
+# Datos de personas (nómina, usuarios): nunca al repositorio
+/Docs/
