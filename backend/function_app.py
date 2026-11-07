@@ -4558,6 +4558,10 @@ def _hardware_refresh():
             previous = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/hardware/snapshot.json")
             if previous and previous.get("items"):
                 raise RuntimeError("La Mesa no respondió; se mantiene la foto anterior")
+        if (snapshot.get("sources", {}).get("graph") or {}).get("error"):
+            previous = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/hardware/snapshot.json")
+            if previous and (previous.get("licenses") or {}).get("bySku"):
+                raise RuntimeError("Microsoft 365 no respondió; se mantiene el inventario anterior. Intenta actualizar de nuevo.")
         _hardware_blob("snapshot.json").upload_blob(json.dumps(snapshot, ensure_ascii=False, default=str), overwrite=True, content_type="application/json", timeout=10)
         history = {"generatedAt": snapshot["generatedAt"], "kpis": snapshot["kpis"]}
         _hardware_blob(f"history/{datetime.now(timezone.utc):%Y-%m-%d}.json").upload_blob(json.dumps(history, ensure_ascii=False), overwrite=True, content_type="application/json", timeout=10)
@@ -4575,7 +4579,8 @@ def hardware_get(req: func.HttpRequest) -> func.HttpResponse:
     _, error = require_perms(req, cap="hardware")
     if error is not None:
         return error
-    if _hardware_cached is None or time.monotonic() - _hardware_cached_at >= 300:
+    reload_snapshot = _hardware_cached is None or time.monotonic() - _hardware_cached_at >= 300
+    if reload_snapshot:
         _hardware_cached = load_json_blob(f"{CONFIG_PREFIX.strip('/')}/hardware/snapshot.json")
         _hardware_cached_at = time.monotonic()
     # Static Web Apps no ejecuta temporizadores: la foto vieja (> 20 h) se renueva al abrir la sección.
@@ -4584,7 +4589,9 @@ def hardware_get(req: func.HttpRequest) -> func.HttpResponse:
         stale = datetime.now(timezone.utc) - generated > timedelta(hours=20)
     except ValueError:
         stale = _hardware_cached is not None
-    if stale:
+    needs_accounts = reload_snapshot and _hardware_cached is not None and not isinstance(
+        (_hardware_cached.get("licenses") or {}).get("accounts"), list)
+    if stale or needs_accounts:
         try:
             _hardware_refresh()
         except RuntimeError:

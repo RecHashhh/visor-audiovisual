@@ -109,3 +109,17 @@
 .hw-company-rows { max-height: 40vh; overflow-y: auto; }
 .hw-dialog { max-height: 90vh; overflow-y: auto; box-sizing: border-box; }
 .hw-dialog > label { display: block; margin: 12px 0; }
+.hw-license-status { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 16px; margin: 12px 0; padding: 10px 12px; background: var(--bg2); border-left: 3px solid var(--accent); font-size: 12px; }
+.hw-license-inventory { display: grid; grid-template-columns: minmax(0, 1fr); min-width: 0; margin: 12px 0 16px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg2); }
+.hw-license-inventory > header { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 14px; }
+.hw-license-inventory h2 { margin: 0; font-size: 14px; }
+.hw-license-inventory small { color: var(--text-dim); font-size: 11px; }
+.hw-license-inventory input { margin-left: auto; padding: 7px 10px; max-width: 100%; box-sizing: border-box; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); font: inherit; font-size: 12px; }
+.hw-license-stock { font-size: 12px; }
+.hw-license-stock td, .hw-license-stock th { padding: 10px 14px; }
+.hw-license-stock td:first-child { min-width: 180px; max-width: 460px; }
+.hw-license-stock td:not(:first-child) { font-variant-numeric: tabular-nums; }
+.hw-license-utilization { display: flex; align-items: center; gap: 10px; min-width: 110px; }
+.hw-license-utilization meter { width: 70px; height: 9px; accent-color: var(--accent); }
+.hw-license-utilization span { min-width: 38px; text-align: right; }
+.hw-license-note { display: flex; align-items: center; gap: 8px; margin: 0; padding: 0 14px 10px; color: var(--text-dim); font-size: 11px; }

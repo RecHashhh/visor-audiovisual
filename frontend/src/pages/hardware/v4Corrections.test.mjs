@@ -22,6 +22,27 @@ const snapshot = { items: [], licenses: {
 } };
 const prices = { SPB: 22, FLOW_FREE: 25, MASSIVE: 10, ZERO: 0 };
 
+test('una foto anterior conserva el inventario aunque todavía no tenga cuentas ni país', () => {
+  const { accounts, ...licenses } = snapshot.licenses;
+  const photo = { ...snapshot, licenses };
+  const data = buildData(photo, {}, []);
+  const scope = scopeLicenses(photo, data, prices, 'EC');
+  assert.equal(scope.accountsAvailable, false);
+  assert.equal(scope.inventoryGlobal, true);
+  assert.equal(scope.country, '');
+  assert.equal(scope.paidStock[0].purchased, 10);
+  assert.equal(scope.paidStock[0].assigned, 3);
+  assert.equal(scope.paidStock[0].available, 7);
+  const period = defaultPeriod();
+  const model = extendModel(buildSectionModel(photo, data, period, null, new Date()),
+    photo, data, period, null, prices, 90, 'EC');
+  assert.deepEqual(model.cards.resumen.at(-1).chart[0].series, { Asignadas: 3, Libres: 7 });
+  assert.equal(model.cards.licencias.length, 1);
+  assert.equal(model.v3.licenseScope.accountsAvailable, false);
+  // Una lista vacía actual sí significa que no hay cuentas en ese país.
+  assert.equal(scopeLicenses({ ...photo, licenses: { ...licenses, accounts: [] } }, data, prices, 'EC').stock.length, 0);
+});
+
 test('las gratuitas y las SKU masivas solo quedan en tablas, sin costo ni ahorro', () => {
   const data = buildData(snapshot, {}, []);
   const scope = scopeLicenses(snapshot, data, prices);

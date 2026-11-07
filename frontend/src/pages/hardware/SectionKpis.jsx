@@ -22,7 +22,7 @@ export default function SectionKpis({ tab, data, period, model }) {
       {current('Cobertura de personal', data.people.length ?
         100 * data.people.filter(p => p.statusKey !== 'sin_computadora').length / data.people.length : 0,
       false, 'del personal objetivo con computadora', true)}
-      {current('Ahorro potencial al mes', v.licenses.monthly, true)}
+      {current('Ahorro potencial al mes', v.licenseScope.accountsAvailable ? v.licenses.monthly : null, true)}
     </>}
     {tab === 'estado' && <>
       {['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)',
@@ -53,12 +53,12 @@ export default function SectionKpis({ tab, data, period, model }) {
     {tab === 'licencias' && <>
       {current('Licencias compradas', v.licenseScope.inventoryGlobal ? sum(v.licenseScope.paidStock, 'purchased') : null,
         false, v.licenseScope.inventoryGlobal ? undefined : 'Sin desglose para estos filtros')}
-      {current('Licencias asignadas', sum(v.licenseScope.paidStock, 'assigned'))}
+      {current('Licencias asignadas', !v.licenseScope.inventoryGlobal && !v.licenseScope.accountsAvailable ? null : sum(v.licenseScope.paidStock, 'assigned'))}
       {current('Licencias libres', v.licenseScope.inventoryGlobal ? sum(v.licenseScope.paidStock, 'available') : null,
         false, v.licenseScope.inventoryGlobal ? undefined : 'Sin desglose para estos filtros')}
-      {current('Ahorro potencial mensual', v.licenses.monthly, true)}
-      {current('Ahorro potencial anual', v.licenses.annual, true)}
-      {current('Cuentas con actividad desconocida', v.licenses.rows.filter(row => row.paidSkus.length && row.activity === 'Actividad desconocida').length)}
+      {current('Ahorro potencial mensual', v.licenseScope.accountsAvailable ? v.licenses.monthly : null, true)}
+      {current('Ahorro potencial anual', v.licenseScope.accountsAvailable ? v.licenses.annual : null, true)}
+      {current('Cuentas con actividad desconocida', v.licenseScope.accountsAvailable ? v.licenses.rows.filter(row => row.paidSkus.length && row.activity === 'Actividad desconocida').length : null)}
     </>}
     {tab === 'proyectos' && <>
       {current('Proyectos con equipos', new Set(data.active.map(row => row.project)).size)}

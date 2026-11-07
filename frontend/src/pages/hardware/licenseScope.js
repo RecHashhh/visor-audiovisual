@@ -1,6 +1,9 @@
 import { DEFAULT_PRICES } from './licensePrices.js';
 
 export function scopeLicenses(snapshot, data, prices = DEFAULT_PRICES, country = '') {
+  const accountsAvailable = Array.isArray(snapshot.licenses?.accounts);
+  // Las fotos anteriores ya incluyen inventario; no se descarta al faltar cuentas por país.
+  country = accountsAvailable ? country : '';
   const emails = new Set(data.people.map(person => String(person.email || '').trim().toLowerCase()).filter(Boolean));
   const scoped = Boolean(country || data.licenseFiltered);
   const accounts = (snapshot.licenses?.accounts || []).filter(row => {
@@ -18,15 +21,15 @@ export function scopeLicenses(snapshot, data, prices = DEFAULT_PRICES, country =
   for (const sku of freeSkus) paidPrices[sku] = 0;
   const stock = (data.allLicenses || data.licenses).map(row => {
     const has = account => account.skus?.includes(code(row));
-    const assigned = scoped ? accounts.filter(has).length : row.assigned;
+    const assigned = scoped ? accountsAvailable ? accounts.filter(has).length : null : row.assigned;
     // Graph no atribuye el inventario comprado o libre a un país, empresa o tipo.
     return { ...row, assigned, amount: assigned,
       purchased: scoped ? null : row.purchased, available: scoped ? null : row.available,
-      blockedAccounts: scoped ? accounts.filter(account => account.enabled === false && has(account)).length : row.blockedAccounts,
-      targetAssigned: scoped ? accounts.filter(account => has(account) && emails.has(String(account.account || '').trim().toLowerCase())).length : row.targetAssigned,
+      blockedAccounts: scoped ? accountsAvailable ? accounts.filter(account => account.enabled === false && has(account)).length : null : row.blockedAccounts,
+      targetAssigned: scoped ? accountsAvailable ? accounts.filter(account => has(account) && emails.has(String(account.account || '').trim().toLowerCase())).length : null : row.targetAssigned,
       licenseKind: freeSkus.has(code(row)) ? 'gratuita' : Number(paidPrices[code(row)]) > 0 ? 'pagada' : 'Sin precio',
     };
-  }).filter(row => !scoped || row.assigned > 0);
-  return { accounts, prices: paidPrices, country, stock, inventoryGlobal: !scoped,
+  }).filter(row => !scoped || row.assigned === null || row.assigned > 0);
+  return { accounts, accountsAvailable, prices: paidPrices, country, stock, inventoryGlobal: !scoped,
     paidStock: stock.filter(row => row.licenseKind === 'pagada') };
 }

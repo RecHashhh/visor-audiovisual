@@ -151,6 +151,17 @@ class HardwareIntegrationTests(unittest.TestCase):
         history = next(v for key, v in blobs.items() if key.startswith('history/'))
         self.assertEqual(set(history), {'generatedAt', 'kpis'})
 
+    def test_graph_failure_does_not_replace_existing_license_inventory(self):
+        import function_app as app
+        previous = {'items': [{'id': 1}], 'licenses': {'bySku': [{'sku': 'SPB', 'assigned': 3}]}}
+        partial = {'items': [{'id': 1}], 'sources': {'graph': {'error': 'No se pudo completar users'}}}
+        with patch('hardware_service.refresh', return_value=partial), \
+                patch.object(app, 'load_json_blob', return_value=previous), \
+                patch.object(app, '_hardware_blob') as blob:
+            with self.assertRaisesRegex(RuntimeError, 'inventario anterior'):
+                app._hardware_refresh()
+            blob.assert_not_called()
+
     def test_private_blobs_require_hardware_capability(self):
         import function_app as app
         with patch.object(app, 'require_perms', return_value=(None, None)) as gate:
@@ -195,6 +206,42 @@ class HardwareIntegrationTests(unittest.TestCase):
             result = app.hardware_get.build().get_user_function()(req)
             self.assertEqual(result.status_code, 404)
             self.assertIn('foto', json.loads(result.get_body())['error'])
+
+    def test_recent_legacy_snapshot_refreshes_for_account_details(self):
+        from datetime import datetime, timezone
+        import azure.functions as func
+        import function_app as app
+        old = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'licenses': {'bySku': [{'sku': 'SPB'}]}}
+        updated = {**old, 'licenses': {**old['licenses'], 'accounts': []}}
+        req = func.HttpRequest(method='GET', url='http://local/api/hardware', body=b'')
+        def renew():
+            app._hardware_cached = updated
+            return updated
+        with patch.object(app, 'require_perms', return_value=({}, None)), \
+                patch.object(app, 'load_json_blob', return_value=old), \
+                patch.object(app, '_hardware_cached', None), \
+                patch.object(app, '_hardware_cached_at', 0), \
+                patch.object(app, '_hardware_refresh', side_effect=renew) as refresh:
+            result = app.hardware_get.build().get_user_function()(req)
+            self.assertEqual(json.loads(result.get_body())['licenses']['accounts'], [])
+            app.hardware_get.build().get_user_function()(req)
+            refresh.assert_called_once()
+
+    def test_legacy_inventory_survives_refresh_failure_without_repeated_attempts(self):
+        from datetime import datetime, timezone
+        import azure.functions as func
+        import function_app as app
+        old = {'generatedAt': datetime.now(timezone.utc).isoformat(), 'licenses': {'bySku': [{'sku': 'SPB', 'assigned': 3}]}}
+        req = func.HttpRequest(method='GET', url='http://local/api/hardware', body=b'')
+        with patch.object(app, 'require_perms', return_value=({}, None)), \
+                patch.object(app, 'load_json_blob', return_value=old), \
+                patch.object(app, '_hardware_cached', None), \
+                patch.object(app, '_hardware_cached_at', 0), \
+                patch.object(app, '_hardware_refresh', side_effect=RuntimeError('En curso')) as refresh:
+            for _ in range(2):
+                result = app.hardware_get.build().get_user_function()(req)
+                self.assertEqual(json.loads(result.get_body())['licenses']['bySku'][0]['assigned'], 3)
+            refresh.assert_called_once()
 
 
 if __name__ == '__main__':

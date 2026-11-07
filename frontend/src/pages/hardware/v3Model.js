@@ -44,7 +44,7 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
   })), licenseScope.prices, threshold, today);
   const licenseCard = { ...model.cards.resumen.at(-1),
     name: licenseScope.inventoryGlobal ? 'Licencias pagadas: asignadas y libres' : 'Licencias pagadas: asignadas',
-    chart: [...licenseScope.paidStock].sort((a, b) => b.assigned - a.assigned).slice(0, 8).map(row => ({
+    chart: [...licenseScope.paidStock].filter(row => row.assigned !== null).sort((a, b) => b.assigned - a.assigned).slice(0, 8).map(row => ({
       label: row.license, series: licenseScope.inventoryGlobal ?
         { Asignadas: row.assigned || 0, Libres: row.available || 0 } :
         { Asignadas: row.assigned || 0 },
@@ -95,6 +95,8 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
     accountsCard('Licencias asignadas por área', licenses.rows.filter(row => row.paidSkus.length).map(row => ({ ...row, amount: row.paidSkus.length }))),
     accountsCard('Licencias asignadas por proyecto', licenses.rows.filter(row => row.paidSkus.length).map(row => ({ ...row, amount: row.paidSkus.length })), 'project'),
   ];
+  if (!licenseScope.accountsAvailable) model.cards.licencias = [licenseCard];
+  else model.cards.licencias = model.cards.licencias.filter(config => config === licenseCard || config.detailRows.length);
   const stockTable = model.tables.personas.find(row => row.id === 'licenses');
   model.tables.licencias = [{ ...stockTable, rows: licenseScope.stock,
     columns: [...stockTable.columns, ['licenseKind', 'Modalidad']] },

@@ -7,9 +7,11 @@ export default function SearchSelect({ options, value, onChange, multiple = fals
   const id = useId();
   const host = useRef(null);
   const input = useRef(null);
+  const trigger = useRef(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [active, setActive] = useState(0);
+  const [popupLeft, setPopupLeft] = useState(0);
   const selected = multiple ? value || [] : [value];
   const result = filterOptions(options, query);
   const visible = result.options;
@@ -21,6 +23,14 @@ export default function SearchSelect({ options, value, onChange, multiple = fals
     blocks.at(-1).items.push({ option, index: i });
   });
   const close = () => { setOpen(false); setQuery(''); setActive(0); };
+  const expand = (text = '') => { setQuery(text); setActive(0); setOpen(true); };
+  useEffect(() => {
+    if (!open) return;
+    const rect = host.current.getBoundingClientRect();
+    const width = Math.min(Math.max(rect.width, 240), window.innerWidth - 32);
+    setPopupLeft(Math.min(0, window.innerWidth - 16 - rect.left - width));
+    input.current?.focus();
+  }, [open]);
   useEffect(() => {
     const outside = event => { if (!host.current?.contains(event.target)) close(); };
     document.addEventListener('pointerdown', outside);
@@ -34,8 +44,24 @@ export default function SearchSelect({ options, value, onChange, multiple = fals
       onChange(option.value === '' ? [] : selected.includes(option.value) ?
         selected.filter(item => item !== option.value) : [...selected, option.value]);
       setQuery(''); setActive(0);
-    } else { onChange(option.value); close(); }
-    input.current?.focus();
+    } else { onChange(option.value); close(); trigger.current?.focus(); }
+    if (multiple) input.current?.focus();
+  };
+  const navigate = event => {
+    if (event.key === 'Escape') {
+      event.stopPropagation(); close(); trigger.current?.focus(); return;
+    }
+    if (event.key === 'Tab') { close(); return; }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      if (!open) expand();
+      else setActive(Math.max(0, Math.min(visible.length - 1,
+        index + (event.key === 'ArrowDown' ? 1 : -1))));
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (open && visible[index]) choose(visible[index]); else expand();
+    }
   };
   const highlight = label => {
     const text = String(label);
@@ -52,28 +78,29 @@ export default function SearchSelect({ options, value, onChange, multiple = fals
         {options.find(option => option.value === item)?.label || item} ×
       </button>)}
     </div>}
-    <input ref={input} role="combobox" aria-label={ariaLabel} aria-expanded={open}
-      aria-controls={`${id}-list`} aria-autocomplete="list"
-      aria-activedescendant={open && index >= 0 ? `${id}-${index}` : undefined}
-      disabled={disabled} autoComplete="off" placeholder={placeholder}
-      value={open ? query : multiple ? '' : options.find(option => option.value === value)?.label ?? ''}
-      onFocus={() => { setQuery(''); setActive(0); setOpen(true); }}
-      onClick={() => setOpen(true)}
-      onChange={event => { setQuery(event.target.value); setActive(0); setOpen(true); }}
+    <button ref={trigger} type="button" className="ss-control" role="combobox"
+      aria-label={ariaLabel} aria-expanded={open} aria-haspopup="listbox"
+      aria-controls={`${id}-list`} disabled={disabled}
+      onClick={() => open ? close() : expand()}
       onKeyDown={event => {
-        if (event.key === 'Escape' && open) { event.stopPropagation(); close(); return; }
-        if (event.key === 'Tab') { close(); return; }
-        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-          event.preventDefault(); setOpen(true);
-          setActive(open ? Math.max(0, Math.min(visible.length - 1,
-            index + (event.key === 'ArrowDown' ? 1 : -1))) : 0);
+        navigate(event);
+        if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+          event.preventDefault(); expand(event.key.trim());
         }
-        if (event.key === 'Enter') {
-          event.preventDefault();
-          if (open && visible[index]) choose(visible[index]); else setOpen(true);
-        }
-      }} />
-    {open && <div className="ss-popup">
+      }}>
+      <span>{multiple ? selected.length ? `${selected.length} seleccionados` : 'Todos' :
+        options.find(option => option.value === value)?.label ?? placeholder}</span>
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.6" />
+      </svg>
+    </button>
+    {open && <div className="ss-popup" style={{ left: popupLeft }}>
+      <div className="ss-search">
+        <input ref={input} type="search" aria-label={`Buscar en ${ariaLabel || 'opciones'}`}
+          aria-controls={`${id}-list`} aria-activedescendant={index >= 0 ? `${id}-${index}` : undefined}
+          autoComplete="off" placeholder={placeholder} value={query}
+          onChange={event => { setQuery(event.target.value); setActive(0); }} onKeyDown={navigate} />
+      </div>
       <ul id={`${id}-list`} role="listbox" aria-label={ariaLabel || 'Opciones'}
         aria-multiselectable={multiple || undefined}>
         {blocks.map((block, blockIndex) => <li key={blockIndex}
@@ -86,6 +113,7 @@ export default function SearchSelect({ options, value, onChange, multiple = fals
             onClick={event => { event.preventDefault(); event.stopPropagation(); choose(option); }}>
             <span className="ss-option-label" title={String(option.label)}>{highlight(option.label)}</span>
             {option.count !== undefined && <span className="ss-count">{option.count.toLocaleString('es')}</span>}
+            {selected.includes(option.value) && <span className="ss-check" aria-hidden="true">✓</span>}
           </div>)}
         </li>)}
       </ul>

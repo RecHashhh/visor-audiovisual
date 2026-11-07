@@ -9,6 +9,7 @@ import { hardwareSettings, hardwareViews } from './hardware/preferences';
 import { scopeLicenses } from './hardware/licenseScope';
 import { typeLabel } from './hardware/v3Metrics';
 import LicensePrices from './hardware/LicensePrices.jsx';
+import LicenseInventory from './hardware/LicenseInventory.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils/api';
 import Help from '../components/Help';
@@ -54,7 +55,7 @@ export default function HardwarePage() {
   const [filter, setFilter] = useState(null);
   const [prices, setPrices] = useState(DEFAULT_PRICES);
   const [threshold, setThreshold] = useState(90);
-  const [licenseCountry, setLicenseCountry] = useState('EC');
+  const [licenseCountry, setLicenseCountry] = useState('');
   const [positions, setPositions] = useState(DEFAULT_EXCLUDED);
   const [views, setViews] = useState([]);
   const [preferencesReady, setPreferencesReady] = useState(false);
@@ -231,8 +232,9 @@ export default function HardwarePage() {
       {!snapshot.payrollUploaded && <div className="alert">
         Actualiza la nómina para calcular áreas y cobertura de personas.
       </div>}
-      {!snapshot.licenses?.accounts && <div className="alert">
-        Actualiza la foto para incorporar el estado de equipos y la actividad de las cuentas de Microsoft 365.
+      {!licenseScope.accountsAvailable && ['resumen', 'licencias'].includes(tab) && <div className="hw-license-status" role="status">
+        Inventario disponible. Actualiza para consultar quién tiene cada licencia y su último ingreso.
+        <button type="button" className="hw-card-link" disabled={busy} onClick={() => update()}>Actualizar datos</button>
       </div>}
       {!['resumen', 'explorar'].includes(tab) && <div className="hw-toolbar hw-view-controls">
         <div className="segmented" aria-label="Vista de sección">
@@ -258,6 +260,7 @@ export default function HardwarePage() {
       {tab === 'licencias' && <div className="hw-toolbar">
         <label>País
           <SearchSelect aria-label="País de licencias" value={licenseCountry}
+            disabled={!licenseScope.accountsAvailable}
             onChange={value => { setLicenseCountry(value); setFilter(null); }}
             options={[{ value: '', label: 'Todos' }, { value: 'EC', label: 'Ecuador (EC)' },
               { value: 'PE', label: 'Perú (PE)' }, { value: 'other', label: 'Otros/sin dato' }]} />
@@ -266,7 +269,7 @@ export default function HardwarePage() {
           <SearchSelect aria-label="Inactividad desde" value={threshold} onChange={value => { setThreshold(value); setFilter(null); }}
             options={[30, 60, 90, 180].map(value => ({ value, label: `${value} días` }))} />
         </label>
-        <small>Ahorro estimado sin duplicar alertas. En suites duplicadas se conserva la de mayor precio. Revisar antes de retirar.</small>
+        <Help text="Asignada significa vinculada a una cuenta; no confirma el uso de cada aplicación. La actividad corresponde al último ingreso de la cuenta. El ahorro estimado no duplica alertas y conserva la suite de mayor precio." />
         {!licenseScope.inventoryGlobal && <small>Compradas y libres solo en inventario global: país Todos, sin filtros de empresa ni tipo.</small>}
         {snapshot.sources?.graph?.signInError && <span role="status">{snapshot.sources.graph.signInError}</span>}
       </div>}
@@ -289,6 +292,7 @@ export default function HardwarePage() {
       </div>}
       {tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') && <>
         <SectionKpis tab={tab} data={data} period={period} snapshot={snapshot} model={model} />
+        {tab === 'licencias' && <LicenseInventory scope={licenseScope} />}
         <div className="hw-cards">
           {model.cards[tab].map((config, index) => (
             <FixedCard key={`${tab}-${index}`} config={config} data={data}
