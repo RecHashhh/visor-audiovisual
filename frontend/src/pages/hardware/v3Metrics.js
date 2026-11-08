@@ -79,7 +79,8 @@ export function completeness(items, costCenters = []) {
     ['usage', 'Tipo de uso', row => present(row.usage)],
     ['physicalState', 'Estado físico', row => present(row.physicalState)],
     ['warrantyUntil', 'Garantía', row => present(row.warrantyUntil)],
-    ['insurance', 'Seguro', row => present(row.insurance ?? row.insurancePolicy ?? row.insuranceUntil)],
+    ['insurance', 'Seguro', row => present(row.insurer) || present(row.insuredTo) ||
+      present(row.insurance ?? row.insurancePolicy ?? row.insuranceUntil)],
     ['costCenter', 'Centro de costo coincide', row => centers.get(row.cedula) === 'coincide'],
   ];
   return fields.map(([key, label, valid]) => {

@@ -571,7 +571,7 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
     ...config('Antigüedad de las computadoras', 'age', 'age'), chart: age.series,
     kind: 'stacked', split: 'type',
     note: [age.estimated && `${age.estimated} con fecha estimada (factura o primera asignación)`,
-      age.missing && `${age.missing} sin ninguna fecha`].filter(Boolean).join(' · '),
+      age.missing && `${age.missing} Sin fecha`].filter(Boolean).join(' · '),
   };
   const typeCard = {
     ...config('Equipos vigentes por tipo', 'active', 'type'),
