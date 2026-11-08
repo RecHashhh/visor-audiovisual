@@ -210,3 +210,7 @@
 /* Indicadores que llevan a su tabla */
 .hw-kpis > .hw-kpi-open { cursor: pointer; transition: border-color .15s; }
 .hw-kpis > .hw-kpi-open:hover, .hw-kpis > .hw-kpi-open:focus-visible { border-color: var(--accent); }
+
+/* Grupo del indicador: año del período u «Hoy» */
+.hw-kpi-tag { margin-left: 6px; padding: 0 5px; border-radius: 3px; background: var(--bg3); color: var(--text-dim);
+  font-size: 10px; font-style: normal; font-weight: 600; }

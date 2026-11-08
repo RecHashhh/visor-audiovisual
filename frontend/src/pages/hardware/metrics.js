@@ -573,10 +573,8 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
     note: [age.estimated && `${age.estimated} con fecha estimada (factura o primera asignación)`,
       age.missing && `${age.missing} Sin fecha`].filter(Boolean).join(' · '),
   };
-  const typeCard = {
-    ...config('Equipos vigentes por tipo', 'active', 'type'),
-    chart: aggregate(activeRows, 'type', '', 6), kind: 'horizontal',
-  };
+  // Responde al período y a los filtros (antes «vigentes por tipo»: con filtro de tipo quedaba en una barra).
+  const typeCard = config('Equipos comprados por proyecto', 'equipment', 'project', { kind: 'horizontal', top: 8 });
   const licenseCard = {
     ...config('Licencias: asignadas y libres', 'licenses', 'license'),
     chart: licenseSeries, kind: 'horizontal',

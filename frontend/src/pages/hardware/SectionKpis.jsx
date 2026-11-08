@@ -38,23 +38,26 @@ export default function SectionKpis({ tab, data, period, model, onOpen }) {
   const target = title => map[title] || (/^Pólizas vencen/.test(title) ? ['seguros', 'policies-expiring'] :
     tab === 'calidad' ? ['calidad', 'completeness'] : null);
   const opener = title => onOpen && target(title) ? () => onOpen(target(title)) : undefined;
-  const current = (title, value, money = false, context, percent = false) =>
-    <Kpi key={title} title={title} value={value} money={money} context={context} percent={percent} onOpen={opener(title)} />;
+  const current = (title, value, money = false, context, percent = false, tag) =>
+    <Kpi key={title} title={title} value={value} money={money} context={context} percent={percent} onOpen={opener(title)} tag={tag} />;
   const years = periodYears(period);
   const when = years.length > 1 ? `${years[0]}–${years.at(-1)}` : years[0];
-  const flow = (title, measure, money = false, context = `En ${when}`) =>
-    <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} context={context} onOpen={opener(title)} />;
-  return <div className={`hw-kpis hw-kpis-exec${['estado', 'resumen'].includes(tab) ? ' hw-kpis-seven' : ''}`}>
+  const flow = (title, measure, money = false, context, tag) =>
+    <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} context={context} onOpen={opener(title)} tag={tag} />;
+  return <div className={`hw-kpis hw-kpis-exec${tab === 'estado' ? ' hw-kpis-seven' : ''}`}>
     {tab === 'resumen' && <>
-      {current('Equipos vigentes', data.active.length, false, `${usd(sum(data.active, 'value'))} valor de compra`)}
-      {current('Computadoras vigentes', v.computers.length)}
-      {flow('Equipos comprados', 'equipment')}
-      {flow('Inversión del período', 'value', true)}
-      <Kpi title="Valor de compra dado de baja" rows={v.losses} period={period} money onOpen={opener('Valor de compra dado de baja')} />
+      {/* Primero lo que pasó en el período elegido; después lo que existe hoy. */}
+      {flow('Equipos comprados', 'equipment', false, undefined, when)}
+      {flow('Inversión del período', 'value', true, undefined, when)}
+      <Kpi title="Valor de compra dado de baja" rows={v.losses} period={period} money tag={when}
+        context={`${measureRows(data, 'disposals', period).length.toLocaleString('es')} equipos dados de baja`}
+        onOpen={opener('Valor de compra dado de baja')} />
+      {current('Computadoras vigentes', v.computers.length, false,
+        `de ${data.active.length.toLocaleString('es')} equipos · ${usd(sum(data.active, 'value'))}`, false, 'Hoy')}
       {current('Cobertura de personal', data.people.length ?
         100 * data.people.filter(p => p.statusKey !== 'sin_computadora').length / data.people.length : 0,
-      false, 'del personal objetivo con computadora', true)}
-      {current('Ahorro potencial al mes', v.licenseScope.accountsAvailable ? v.licenses.monthly : null, true)}
+      false, 'del personal objetivo con computadora', true, 'Hoy')}
+      {current('Ahorro potencial al mes', v.licenseScope.accountsAvailable ? v.licenses.monthly : null, true, undefined, false, 'Hoy')}
     </>}
     {tab === 'estado' && <>
       {['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)',

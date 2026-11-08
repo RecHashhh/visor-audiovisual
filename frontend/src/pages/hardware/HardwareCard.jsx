@@ -15,14 +15,14 @@ export function Card({ title, onDetail, actions, wide = false, children }) {
   </section>;
 }
 
-export function Kpi({ title, rows, period, context, value, money = false, percent = false, onOpen }) {
+export function Kpi({ title, rows, period, context, value, money = false, percent = false, onOpen, tag }) {
   const metric = rows ? comparison(rows, period) : null;
   const format = money ? usd : percent ? value => `${number(value)} %` : number;
   // Con onOpen el indicador lleva a la tabla que lo compone.
   const open = onOpen ? { role: 'button', tabIndex: 0, className: 'hw-kpi-open', title: 'Ver la tabla', onClick: onOpen,
     onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } } } : {};
   return <div {...open}>
-    <span>{title}</span>
+    <span>{title}{tag && <em className="hw-kpi-tag">{tag}</em>}</span>
     <strong>{!metric && value === null ? 'Sin dato' : format(metric ? metric.total : value)}</strong>
     {metric?.labels && <small>
       vs {period.a}: {format(metric.a)} ({metric.delta === null ? 'Sin base de comparación' :
