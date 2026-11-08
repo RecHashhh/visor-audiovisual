@@ -21,6 +21,7 @@ import FixedCard from './hardware/FixedCard';
 import SectionKpis, { dateLabel } from './hardware/SectionKpis';
 import { Table } from './hardware/HardwareTable';
 import { useFit } from './hardware/useFit';
+import { hasChartData } from './hardware/cardData';
 import {
   availableYears, buildData, buildSectionModel, DEFAULT_EXCLUDED, defaultPeriod, drillFilter,
   groupDisposalReasons, parsePeriod, periodParams,
@@ -210,7 +211,8 @@ export default function HardwarePage() {
   // Tablero ajustado a la ventana: las tarjetas reparten el alto libre, sin scroll ni hueco abajo.
   const cardsRef = useRef(null);
   const cardCols = window.innerWidth <= 700 ? 1 : window.innerWidth <= 1200 ? 2 : 3;
-  const cardCount = (model.cards[tab] || []).reduce((cells, config) => cells + (config.wide && cardCols > 1 ? 2 : 1), 0);
+  const visibleCards = (model.cards[tab] || []).filter(config => hasChartData(config, data, period));
+  const cardCount = visibleCards.reduce((cells, config) => cells + (config.wide && cardCols > 1 ? 2 : 1), 0);
   const cardRows = Math.max(1, Math.ceil(cardCount / cardCols));
   const fitCards = !!snapshot && tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') &&
     cardCols > 1 && !(tab === 'resumen' && views.length);
@@ -322,7 +324,7 @@ export default function HardwarePage() {
         {tab === 'licencias' && <LicenseInventory scope={licenseScope} />}
         <div className={`hw-cards${fitCards ? ' hw-cards-fit' : ''}`} ref={cardsRef}
           style={fitCards && cardsHeight ? { height: cardsHeight } : undefined}>
-          {model.cards[tab].map((config, index) => (
+          {visibleCards.map((config, index) => (
             <FixedCard key={`${tab}-${index}`} config={config} data={data} fit={fitCards}
               period={period} snapshot={snapshot} onDrill={drill} />
           ))}

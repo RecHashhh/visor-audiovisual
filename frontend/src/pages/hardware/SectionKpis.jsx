@@ -13,10 +13,11 @@ export default function SectionKpis({ tab, data, period, model }) {
     <Kpi key={title} title={title} value={value} money={money} context={context} percent={percent} />;
   const flow = (title, measure, money = false) =>
     <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} />;
-  return <div className={`hw-kpis hw-kpis-exec${tab === 'estado' ? ' hw-kpis-seven' : ''}`}>
+  return <div className={`hw-kpis hw-kpis-exec${['estado', 'resumen'].includes(tab) ? ' hw-kpis-seven' : ''}`}>
     {tab === 'resumen' && <>
       {current('Equipos vigentes', data.active.length, false, `${usd(sum(data.active, 'value'))} valor de compra`)}
       {current('Computadoras vigentes', v.computers.length)}
+      {flow('Equipos comprados', 'equipment')}
       {flow('Inversión del período', 'value', true)}
       <Kpi title="Valor de compra dado de baja" rows={v.losses} period={period} money />
       {current('Cobertura de personal', data.people.length ?
