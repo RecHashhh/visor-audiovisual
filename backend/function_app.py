@@ -4545,7 +4545,7 @@ HARDWARE_REFRESH_CRON = os.environ.get("HARDWARE_REFRESH_CRON", "0 0 6 * * *")
 
 
 def _hardware_blob(name):
-    return get_blob_service().get_blob_client(container=CONTAINER, blob=f"{CONFIG_PREFIX.strip('/')}/hardware/{name}", retry_total=0, connection_timeout=5, read_timeout=10)
+    return get_blob_service().get_blob_client(container=CONTAINER, blob=f"{CONFIG_PREFIX.strip('/')}/hardware/{name}")
 
 
 def _hardware_read_payroll():
