@@ -214,3 +214,28 @@
 /* Grupo del indicador: año del período u «Hoy» */
 .hw-kpi-tag { margin-left: 6px; padding: 0 5px; border-radius: 3px; background: var(--bg3); color: var(--text-dim);
   font-size: 10px; font-style: normal; font-weight: 600; }
+
+/* Filtro de columna al estilo Excel */
+.hw-table th .hw-colfilter-btn { display: inline-grid; place-items: center; width: 16px; height: 16px; margin-left: 4px; vertical-align: middle;
+  border-radius: 3px; color: var(--text-dim); opacity: .55; }
+.hw-table th:hover .hw-colfilter-btn, .hw-table th .hw-colfilter-btn:focus-visible, .hw-table th .hw-colfilter-btn[aria-expanded="true"] { opacity: 1; background: var(--bg2); }
+.hw-table th .hw-colfilter-btn.active { opacity: 1; background: var(--accent); color: var(--bg); }
+.hw-colfilter-btn svg { width: 10px; height: 10px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.hw-colfilter-btn.active svg { fill: currentColor; }
+.hw-colfilter-clear { font: inherit; font-size: 11px; padding: 3px 8px; border: 1px solid var(--accent); border-radius: 4px;
+  background: var(--accent-bg); color: var(--text); cursor: pointer; white-space: nowrap; }
+.hw-colfilter { position: fixed; z-index: 1000; display: flex; flex-direction: column; gap: 8px; padding: 10px;
+  background: var(--bg2); color: var(--text); border: 1px solid var(--border-hi, var(--border)); border-radius: 6px;
+  box-shadow: 0 10px 28px rgb(0 0 0 / .22); font-size: 12px; }
+.hw-colfilter-sort { display: flex; flex-direction: column; border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+.hw-colfilter-sort button { font: inherit; text-align: left; padding: 4px 6px; border: 0; border-radius: 3px; background: none; color: inherit; cursor: pointer; }
+.hw-colfilter-sort button:hover, .hw-colfilter-sort button.active { background: var(--bg3); }
+.hw-colfilter-search { font: inherit; padding: 5px 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); color: var(--text); }
+.hw-colfilter-list { flex: 1; min-height: 60px; overflow: auto; border: 1px solid var(--border); border-radius: 4px; padding: 4px 0; background: var(--bg); }
+.hw-colfilter-list label { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 6px; padding: 3px 8px; cursor: pointer; }
+.hw-colfilter-list label:hover { background: var(--bg3); }
+.hw-colfilter-list label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hw-colfilter-list label small { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.hw-colfilter-list .hw-colfilter-all { grid-template-columns: auto 1fr; font-weight: 600; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+.hw-colfilter-list p { margin: 4px 8px; color: var(--text-dim); }
+.hw-colfilter-actions { display: flex; justify-content: flex-end; gap: 6px; }
