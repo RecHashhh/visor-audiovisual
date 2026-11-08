@@ -129,6 +129,10 @@ test('antigüedad omite sin fecha; durabilidad solo bajas seleccionadas', () => 
   const age = fleetAge(data.items, today);
   assert.equal(age.missing, 1);
   assert.equal(age.series.some(row => /sin fecha/i.test(row.label)), false);
+  const estimated = fleetAge([{ active: true, type: 'LAPTOP', purchaseDate: '2000-01-01', invoiceDate: null, firstAssignedDate: '2024-03-01' }], today);
+  assert.equal(estimated.missing, 0);
+  assert.equal(estimated.estimated, 1);
+  assert.equal(estimated.rows[0].ageSource, 'Primera asignación (estimada)');
   const life = durability(measureRows(data, 'disposals', period));
   assert.equal(life.rows.length, 1);
   assert.ok(life.byType[0].medianMonths > 6);

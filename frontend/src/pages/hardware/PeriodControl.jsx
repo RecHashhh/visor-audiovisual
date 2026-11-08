@@ -5,11 +5,15 @@ export default function PeriodControl({ period, years, onChange, today }) {
   const update = patch => onChange({ ...period, ...patch });
   const options = [...new Set([...years, ...periodYears(period),
     period.year, period.a, period.b, period.from, period.to])].sort().reverse();
+  // «Todos los años» en el modo Año: pasa a un rango con todos los años que tienen datos.
+  const all = { mode: 'rango', from: options.at(-1), to: options[0], months: false };
   const select = (key, label) => (
     <label>
       {label}
-      <SearchSelect aria-label={label} value={period[key]} onChange={value => update({ [key]: value })}
-        options={options.map(year => ({ value: year, label: String(year) }))} />
+      <SearchSelect aria-label={label} value={period[key]}
+        onChange={value => value === 'todos' ? update(all) : update({ [key]: value })}
+        options={[...(key === 'year' && options.length > 1 ? [{ value: 'todos', label: 'Todos los años' }] : []),
+          ...options.map(year => ({ value: year, label: String(year) }))]} />
     </label>
   );
   const current = String(today.getFullYear());

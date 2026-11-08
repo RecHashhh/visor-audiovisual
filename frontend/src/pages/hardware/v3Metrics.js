@@ -1,5 +1,6 @@
 // Reglas puras de Hardware v3; las existencias corresponden a la foto actual.
 import { DEFAULT_PRICES } from './licensePrices.js';
+import { ageDate } from './metrics.js';
 
 export const PAID_SUITES = new Set([
   'SPB', 'O365_BUSINESS_PREMIUM', 'O365_BUSINESS_ESSENTIALS', 'ENTERPRISEPACK',
@@ -94,7 +95,7 @@ export function renewalBudget(items, today = new Date()) {
   const recent = laptops.filter(row => Number(row.purchaseDate.slice(0, 4)) === latest);
   const average = recent.length ? recent.reduce((total, row) => total + Number(row.value), 0) / recent.length : null;
   const old = items.filter(row => row.active && computer(row) &&
-    row.purchaseDate && !row.purchaseDate.startsWith('2000') && daysSince(row.purchaseDate, today) / 365.25 >= 5);
+    ageDate(row) && daysSince(ageDate(row).value, today) / 365.25 >= 5);
   return { rows: old, average, year: Number.isFinite(latest) ? latest : null,
     budget: average === null ? null : old.length * average };
 }

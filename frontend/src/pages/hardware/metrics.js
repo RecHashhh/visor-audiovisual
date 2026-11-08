@@ -57,6 +57,17 @@ export function dateParts(value) {
   return { year: match[1], month: Number(match[2]), date };
 }
 
+// Fecha para la antigüedad: la de compra; si falta, la factura más antigua o la primera asignación
+// de RIP_TIC (estimada). Compras e inversión por año usan solo la fecha de compra real.
+const AGE_SOURCES = [['purchaseDate', 'Compra'], ['invoiceDate', 'Factura (estimada)'], ['firstAssignedDate', 'Primera asignación (estimada)']];
+export function ageDate(row) {
+  for (const [key, source] of AGE_SOURCES) {
+    const parts = dateParts(row?.[key]);
+    if (parts) return { ...parts, value: String(row[key]).slice(0, 10), source, estimated: key !== 'purchaseDate' };
+  }
+  return null;
+}
+
 export function availableYears(snapshot) {
   return [...new Set([
     ...(snapshot.items || []).map(row => row.purchaseDate),
@@ -323,16 +334,17 @@ export function drillFilter(config, label, series, period) {
 
 export function fleetAge(items, today) {
   const labels = ['< 1 año', '1–2 años', '2–3 años', '3–5 años', '5+ años'];
-  let missing = 0;
+  let missing = 0, estimated = 0;
   const rows = [];
   for (const item of items.filter(row => row.active && ['LAPTOP', 'CPU'].includes(row.type))) {
-    const bought = dateParts(item.purchaseDate);
+    const bought = ageDate(item);
     if (!bought) { missing++; continue; }
+    if (bought.estimated) estimated++;
     const age = (+today - +bought.date) / (365.25 * 86400000);
     const index = age < 1 ? 0 : age < 2 ? 1 : age < 3 ? 2 : age < 5 ? 3 : 4;
-    rows.push({ ...item, age: labels[index], amount: 1 });
+    rows.push({ ...item, age: labels[index], ageDate: bought.value, ageSource: bought.source, amount: 1 });
   }
-  return { rows, missing, series: labels.map(label =>
+  return { rows, missing, estimated, series: labels.map(label =>
     aggregate(rows, 'age', 'type').find(row => row.label === label) ||
       { label, count: 0, series: {} }) };
 }
@@ -558,7 +570,8 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
   const ageCard = {
     ...config('Antigüedad de las computadoras', 'age', 'age'), chart: age.series,
     kind: 'stacked', split: 'type',
-    note: `${age.missing} computadoras sin fecha de compra`,
+    note: [age.estimated && `${age.estimated} con fecha estimada (factura o primera asignación)`,
+      age.missing && `${age.missing} sin ninguna fecha`].filter(Boolean).join(' · '),
   };
   const typeCard = {
     ...config('Equipos vigentes por tipo', 'active', 'type'),

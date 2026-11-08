@@ -1,6 +1,7 @@
 import { aggregate, measureRows, sum } from './metrics.js';
 import { computer, computerState, completeness, daysSince, hasInvoice, licenseAnalysis, renewalBudget } from './v3Metrics.js';
 import { DEFAULT_PRICES } from './licensePrices.js';
+import { ageDate } from './metrics.js';
 import { scopeLicenses } from './licenseScope.js';
 import { extendMesa, warrantyState } from './mesaModel.js';
 
@@ -9,7 +10,8 @@ const equipmentColumns = [
   ['site', 'Sede'], ['equipmentState', 'Estado de computadora'], ['usage', 'Tipo de uso'],
   ['usageDate', 'Desde'], ['repairDays', 'Días en reparación'], ['physicalState', 'Estado físico'],
   ['physicalStateDate', 'Última auditoría'], ['physicalNote', 'Observaciones'],
-  ['warrantyUntil', 'Garantía hasta'], ['purchaseDate', 'Fecha de compra'], ['value', 'Valor de compra USD'],
+  ['warrantyUntil', 'Garantía hasta'], ['purchaseDate', 'Fecha de compra'], ['ageDate', 'Fecha para antigüedad'], ['ageSource', 'Origen de la fecha'],
+  ['value', 'Valor de compra USD'],
 ];
 const accountColumns = [
   ['account', 'Cuenta'], ['name', 'Nombre'], ['usageLocation', 'País'], ['area', 'Área'], ['project', 'Proyecto'],
@@ -26,8 +28,8 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
       inPayroll: row.inPayroll ?? (!!row.cedula && !departed.has(String(row.id))),
     }),
     site: row.site || row.location || 'Sin sede',
-    age: daysSince(row.purchaseDate, today) === null || row.purchaseDate?.startsWith('2000') ? 'Sin fecha' :
-      `${Math.floor(daysSince(row.purchaseDate, today) / 365.25)} años`,
+    age: ageDate(row) ? `${Math.floor(daysSince(ageDate(row).value, today) / 365.25)} años` : 'Sin fecha',
+    ageDate: ageDate(row)?.value || '', ageSource: ageDate(row)?.source || 'Sin fecha',
     repairDays: daysSince(row.usageDate, today),
     warranty: warrantyState(row, today),
   }));
