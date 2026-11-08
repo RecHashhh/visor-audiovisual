@@ -206,3 +206,7 @@
   font-size: 11px; line-height: 1.35; transform: translate(12px, calc(-100% - 8px)); }
 .hw-chart .hw-tooltip.hw-tooltip-on { visibility: visible; }
 .hw-chart .hw-tooltip.hw-tooltip-flip { transform: translate(calc(-100% - 12px), calc(-100% - 8px)); }
+
+/* Indicadores que llevan a su tabla */
+.hw-kpis > .hw-kpi-open { cursor: pointer; transition: border-color .15s; }
+.hw-kpis > .hw-kpi-open:hover, .hw-kpis > .hw-kpi-open:focus-visible { border-color: var(--accent); }

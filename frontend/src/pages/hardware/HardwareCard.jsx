@@ -15,17 +15,20 @@ export function Card({ title, onDetail, actions, wide = false, children }) {
   </section>;
 }
 
-export function Kpi({ title, rows, period, context, value, money = false, percent = false }) {
+export function Kpi({ title, rows, period, context, value, money = false, percent = false, onOpen }) {
   const metric = rows ? comparison(rows, period) : null;
   const format = money ? usd : percent ? value => `${number(value)} %` : number;
-  return <div>
+  // Con onOpen el indicador lleva a la tabla que lo compone.
+  const open = onOpen ? { role: 'button', tabIndex: 0, className: 'hw-kpi-open', title: 'Ver la tabla', onClick: onOpen,
+    onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } } } : {};
+  return <div {...open}>
     <span>{title}</span>
     <strong>{!metric && value === null ? 'Sin dato' : format(metric ? metric.total : value)}</strong>
     {metric?.labels && <small>
       vs {period.a}: {format(metric.a)} ({metric.delta === null ? 'Sin base de comparación' :
         `${metric.delta > 0 ? '+' : ''}${Math.round(metric.delta)} %`.replace('-', '−')})
     </small>}
-    {metric && period.mode === 'rango' ? <small>promedio anual {format(metric.total / periodYears(period).length)}</small> : context && <small>{context}</small>}
+    {metric && period.mode === 'rango' && periodYears(period).length > 1 ? <small>promedio anual {format(metric.total / periodYears(period).length)}</small> : context && <small>{context}</small>}
   </div>;
 }
 

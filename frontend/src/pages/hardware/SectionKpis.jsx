@@ -1,5 +1,5 @@
 import { Kpi } from './HardwareCard';
-import { measureRows, sum } from './metrics';
+import { measureRows, periodYears, sum } from './metrics';
 import { usd } from '../../components/charts/HardwareCharts';
 import { hasInvoice } from './v3Metrics';
 
@@ -7,19 +7,50 @@ export const dateLabel = value => value ? new Date(value).toLocaleDateString('es
   timeZone: 'America/Guayaquil', day: 'numeric', month: 'numeric',
 }) : 'sin fecha';
 
-export default function SectionKpis({ tab, data, period, model }) {
+// Tabla a la que lleva cada indicador: [sección, id de tabla] o filas propias.
+function links(v, data) {
+  const computers = state => ({ section: 'estado', title: state, rows: v.computers.filter(row => row.equipmentState === state) });
+  return {
+    'Equipos vigentes': { section: 'proyectos', title: 'Equipos vigentes', rows: data.active },
+    'Computadoras vigentes': ['estado', 'computer-state'], 'Equipos comprados': ['compras', 'purchases'],
+    'Inversión del período': ['compras', 'purchases'], 'Valor de compra': ['compras', 'purchases'],
+    'Valor de compra dado de baja': ['bajas', 'disposals'], 'Cobertura de personal': ['personas', 'with-computer'],
+    'Ahorro potencial al mes': ['licencias', 'accounts'], 'Ahorro potencial mensual': ['licencias', 'accounts'],
+    'Ahorro potencial anual': ['licencias', 'accounts'], 'Licencias asignadas': ['licencias', 'accounts'],
+    'Cuentas con actividad desconocida': ['licencias', 'inactive-accounts'],
+    ...Object.fromEntries(['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)',
+      'Asignada a persona fuera de nómina'].map(state => [state, computers(state)])),
+    'Estado físico registrado': ['estado', 'computer-state'], 'Compras sin factura': ['compras', 'without-invoice'],
+    'Pedidos por entregar': ['compras', 'deliveries'], 'Entrega promedio · días': ['compras', 'deliveries'],
+    'Valor sin asegurar': ['seguros', 'uninsured'], 'Garantías vencen en 90 días': ['seguros', 'warranty-expiring'],
+    'Bajas': ['bajas', 'disposals'], 'Valor de compra perdido': ['bajas', 'disposals'],
+    'Computadoras de 5 años o más': ['bajas', 'renewal'], 'Renovación estimada': ['bajas', 'renewal'],
+    'Personal objetivo': ['personas', 'people'], 'Sin computadora': ['personas', 'without-computer'],
+    'Con equipo y requisitos digitales pendientes': ['personas', 'people'], 'Computadoras a recuperar': ['personas', 'recover'],
+    'Proyectos con equipos': ['proyectos', 'projects'], 'Valor de compra vigente': ['proyectos', 'assignments'],
+    'Personal sin computadora': ['personas', 'without-computer'], 'Empresa registrada': ['calidad', 'invalid-company'],
+  };
+}
+
+export default function SectionKpis({ tab, data, period, model, onOpen }) {
   const v = model.v3, m = model.mesa;
+  const map = links(v, data);
+  const target = title => map[title] || (/^Pólizas vencen/.test(title) ? ['seguros', 'policies-expiring'] :
+    tab === 'calidad' ? ['calidad', 'completeness'] : null);
+  const opener = title => onOpen && target(title) ? () => onOpen(target(title)) : undefined;
   const current = (title, value, money = false, context, percent = false) =>
-    <Kpi key={title} title={title} value={value} money={money} context={context} percent={percent} />;
-  const flow = (title, measure, money = false) =>
-    <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} />;
+    <Kpi key={title} title={title} value={value} money={money} context={context} percent={percent} onOpen={opener(title)} />;
+  const years = periodYears(period);
+  const when = years.length > 1 ? `${years[0]}–${years.at(-1)}` : years[0];
+  const flow = (title, measure, money = false, context = `En ${when}`) =>
+    <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} context={context} onOpen={opener(title)} />;
   return <div className={`hw-kpis hw-kpis-exec${['estado', 'resumen'].includes(tab) ? ' hw-kpis-seven' : ''}`}>
     {tab === 'resumen' && <>
       {current('Equipos vigentes', data.active.length, false, `${usd(sum(data.active, 'value'))} valor de compra`)}
       {current('Computadoras vigentes', v.computers.length)}
       {flow('Equipos comprados', 'equipment')}
       {flow('Inversión del período', 'value', true)}
-      <Kpi title="Valor de compra dado de baja" rows={v.losses} period={period} money />
+      <Kpi title="Valor de compra dado de baja" rows={v.losses} period={period} money onOpen={opener('Valor de compra dado de baja')} />
       {current('Cobertura de personal', data.people.length ?
         100 * data.people.filter(p => p.statusKey !== 'sin_computadora').length / data.people.length : 0,
       false, 'del personal objetivo con computadora', true)}
@@ -48,7 +79,7 @@ export default function SectionKpis({ tab, data, period, model }) {
     </>}
     {tab === 'bajas' && <>
       {flow('Bajas', 'disposals')}
-      <Kpi title="Valor de compra perdido" rows={v.losses} period={period} money />
+      <Kpi title="Valor de compra perdido" rows={v.losses} period={period} money onOpen={opener('Valor de compra perdido')} />
       {current('Computadoras de 5 años o más', v.renewal.rows.length)}
       {current('Renovación estimada', v.renewal.budget, true, v.renewal.average === null ?
         'Sin compras de laptop con costo para estimar' :

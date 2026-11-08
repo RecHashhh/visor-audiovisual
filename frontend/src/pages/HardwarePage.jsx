@@ -201,6 +201,16 @@ export default function HardwarePage() {
     setFilter(drillFilter(config, label, series, period));
   };
 
+  // Indicador → su tabla: una tabla de la sección o filas propias con las columnas de equipos.
+  const openKpi = link => {
+    const [section, id] = Array.isArray(link) ? link : [link.section];
+    setTab(section);
+    setModes(previous => ({ ...previous, [section]: 'tables' }));
+    if (id) { setFilter(null); setTableIds(ids => ({ ...ids, [section]: id })); return; }
+    setFilter({ label: link.title, section, customTable: { id: 'detail', title: link.title, rows: link.rows,
+      columns: model.tables.estado?.[0]?.columns || [] } });
+  };
+
   // Tablas de la sección, una a la vez; «Precios» (solo quien administra) es una más en Licencias.
   const canEditPrices = tab === 'licencias' && preferencesReady && hasCap(me, 'hardware');
   const sectionTables = [...(model?.tables?.[tab] || []),
@@ -315,7 +325,7 @@ export default function HardwarePage() {
         ))}
       </div>}
       {tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') && <>
-        <SectionKpis tab={tab} data={data} period={period} snapshot={snapshot} model={model} />
+        <SectionKpis tab={tab} data={data} period={period} snapshot={snapshot} model={model} onOpen={openKpi} />
         {tab === 'licencias' && <LicenseInventory scope={licenseScope} />}
         <div className={`hw-cards${fitCards ? ' hw-cards-fit' : ''}`} ref={cardsRef}
           style={fitCards && cardsHeight ? { height: cardsHeight } : undefined}>
