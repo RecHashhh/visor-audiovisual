@@ -23,7 +23,7 @@ export default function HardwareChart({
   const [plotHeight, setPlotHeight] = useState(null);
   const svg = useRef(null);
   const [width, setWidth] = useState(400);
-  const [tip, setTip] = useState('');
+  const [tip, setTip] = useState(null); // flota sobre el gráfico: no cambia el alto (si lo cambiara, redibuja y tiembla)
   const [theme, setTheme] = useState(0);
   const series = [...new Set(data.flatMap(row => Object.keys(row.series || {})))];
 
@@ -55,7 +55,7 @@ export default function HardwareChart({
     const root = d3.select(svg.current);
     root.selectAll('*').remove();
     root.style('font-family', 'sans-serif');
-    setTip('');
+    setTip(null);
     if (!data.length) return;
     const css = getComputedStyle(host.current);
     const axisColor = css.getPropertyValue('--text-dim').trim() || '#64748b';
@@ -70,8 +70,13 @@ export default function HardwareChart({
     };
     const accessible = selection => selection.attr('tabindex', 0)
       .attr('role', 'button').attr('aria-label', describe)
-      .on('mouseenter focus', (_, row) => setTip(describe(row)))
-      .on('mouseleave blur', () => setTip(''))
+      .on('mouseenter mousemove focus', (event, row) => {
+        const box = host.current.getBoundingClientRect(), zoom = host.current.currentCSSZoom || 1;
+        const mark = event.currentTarget.getBoundingClientRect();
+        const x = event.clientX ?? mark.left + mark.width / 2, y = event.clientY ?? mark.top;
+        setTip({ text: describe(row), x: (x - box.left) / zoom, y: (y - box.top) / zoom, flip: x - box.left > box.width / 2 });
+      })
+      .on('mouseleave blur', () => setTip(null))
       .on('click', (_, row) => select(row))
       .on('keydown', (event, row) => {
         if (event.key === 'Enter' || event.key === ' ') {
@@ -284,7 +289,8 @@ export default function HardwareChart({
       {series.map((key, index) => <span key={key} title={key}
         style={{ '--hw-series': PALETTE[index % PALETTE.length] }}>{key === 'LAPTOP' ? 'Laptops' : typeLabel(key)}</span>)}
     </div>}
-    <div className="hw-tooltip" role="status">{tip}</div>
+    <div className={`hw-tooltip${tip ? ' hw-tooltip-on' : ''}${tip?.flip ? ' hw-tooltip-flip' : ''}`} role="status"
+      style={tip ? { left: tip.x, top: tip.y } : undefined}>{tip?.text}</div>
   </div>;
 }
 
