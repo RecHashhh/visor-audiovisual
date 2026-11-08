@@ -2854,3 +2854,9 @@ textarea.field-input { resize: vertical; min-height: 60px; font-family: var(--fo
 .tile-del:focus-visible { opacity: 1; }
 /* Sin hover (táctil) no habría forma de llegar al botón. */
 @media (hover: none) { .tile-del { opacity: 1; } }
+
+/* Módulo propio (Hardware): ancho completo sin menú lateral */
+.shell.shell-module { grid-template-columns: 1fr; }
+.topbar-module { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.topbar-module img { height: 26px; width: auto; }
+.topbar-module span { padding-left: 12px; border-left: 1px solid var(--border); font-size: 13px; font-weight: 600; color: var(--text-dim); white-space: nowrap; }

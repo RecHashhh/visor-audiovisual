@@ -56,7 +56,6 @@ export default function Sidebar({ open, onNavigate }) {
             <span className="sidebar-link-label">Favoritos</span>
           </NavLink>
         )}
-        {hasCap(me, 'hardware') && <NavLink to="/hardware" onClick={onNavigate} className={({ isActive }) => `sidebar-link ${isActive ? 'active' : ''}`}><span className="sidebar-link-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75"><rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5M7 21h10"/></svg></span><span className="sidebar-link-label">Hardware</span></NavLink>}
         <div className="sidebar-divider" />
 
         {visibleSections.map(s => (

@@ -23,6 +23,9 @@ export function availableModules(account, authorization, settings = {}) {
   if (authorization.sections === '*' || Array.isArray(authorization.sections) && authorization.sections.length > 0) {
     modules.push({ id: 'audiovisual', title: 'Audiovisual', description: 'Fotografías de obra, videos, marcas y documentos corporativos.', href: '/audiovisual', external: false })
   }
+  if (authorization.caps?.hardware === true) {
+    modules.push({ id: 'hardware', title: 'Hardware', description: 'Inventario de equipos, compras, bajas, licencias y seguros.', href: '/hardware', external: false })
+  }
   const email = String(account.username || '').trim().toLowerCase()
   const oid = String(account.idTokenClaims?.oid || '').toLowerCase()
   const emailAllowed = Array.isArray(config.insuranceReviewEmails) && config.insuranceReviewEmails.some(value => String(value).toLowerCase() === email)

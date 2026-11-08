@@ -8,7 +8,7 @@ function currentTheme() {
   return document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light'
 }
 
-export default function TopBar({ onMenuClick }) {
+export default function TopBar({ onMenuClick, title }) {
   const { accounts } = useMsal()
   const user = accounts[0]
   const initials = user?.name?.split(' ').map(n => n[0]).slice(0,2).join('') || 'U'
@@ -23,7 +23,7 @@ export default function TopBar({ onMenuClick }) {
 
   return (
     <header className="topbar">
-      <button
+      {title ? <div className="topbar-module"><img className="only-light" src="/brands/ripconciv/centrada-positivo-azul.png" alt="RIPCONCIV" /><img className="only-dark" src="/brands/ripconciv/centrada-blanco.png" alt="RIPCONCIV" /><span>{title}</span></div> : <button
         type="button"
         className="topbar-menu-btn"
         onClick={onMenuClick}
@@ -32,11 +32,11 @@ export default function TopBar({ onMenuClick }) {
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round">
           <path d="M4 6h16M4 12h16M4 18h16" />
         </svg>
-      </button>
+      </button>}
       <div className="topbar-sep" />
       <div className="topbar-user">
         <Link className="btn btn-ghost" to="/">Módulos</Link>
-        <button
+        {!title && <button
           type="button"
           className="icon-btn"
           onClick={() => window.dispatchEvent(new Event('ripcon:cmdk'))}
@@ -47,7 +47,7 @@ export default function TopBar({ onMenuClick }) {
             <circle cx="11" cy="11" r="6.5" />
             <path d="M16 16l4.5 4.5" />
           </svg>
-        </button>
+        </button>}
         <button
           type="button"
           className="icon-btn"

@@ -6,6 +6,7 @@ import { Routes, Route, Navigate, useNavigate, useLocation } from 'react-router-
 import { installServiceLinks, finishServiceLoading } from './utils/service-loading'
 import LoginPage      from './pages/LoginPage'
 import AppShell       from './components/AppShell'
+import ModuleShell    from './components/ModuleShell'
 import { SectionsProvider, useSections } from './utils/sections'
 import { AuthzProvider, RequireSection, RequireCap } from './utils/authz'
 import { UploadsProvider } from './utils/uploads'
@@ -110,6 +111,11 @@ function AppRoutes() {
         <Route path="/share/:token" element={<SharePage />} />
         <Route path="/" element={<RequireAuth><AuthzProvider><ModulesPage /></AuthzProvider></RequireAuth>} />
 
+        {/* Módulos con su propio encabezado (sin el menú de Audiovisual) */}
+        <Route element={<RequireAuth><AuthzProvider><ModuleShell title="Hardware" /></AuthzProvider></RequireAuth>}>
+          <Route path="/hardware" element={<RequireCap cap="hardware"><HardwarePage /></RequireCap>} />
+        </Route>
+
         {/* Rutas autenticadas — un solo shell para todas las secciones */}
         <Route
           element={
@@ -170,7 +176,6 @@ function AppRoutes() {
           <Route path="/redes-sociales"         element={<Navigate to="/redes" replace />} />
 
           <Route path="/upload"    element={<RequireCap cap="upload"><UploadPage /></RequireCap>} />
-          <Route path="/hardware" element={<RequireCap cap="hardware"><HardwarePage /></RequireCap>} />
           <Route path="/revision"  element={<RequireCap cap="review"><ReviewPage /></RequireCap>} />
           <Route path="/accesos"   element={<RequireCap cap="manageAccess"><AccessPage /></RequireCap>} />
           <Route path="/secciones" element={<RequireCap cap="manageAccess"><SectionsPage /></RequireCap>} />

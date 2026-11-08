@@ -18,6 +18,12 @@ test('selector: permisos confirmados, revisión limitada y destino seguro', () =
   assert.match(insuranceEntry(), /\/api\/auth\/microsoft\/start\?entry=hub$/)
 })
 
+test('Hardware: módulo propio solo con la capacidad hardware', () => {
+  assert.ok(availableModules(account, { ...permissions, caps: { hardware: true } }).some(m => m.id === 'hardware' && m.href === '/hardware' && !m.external))
+  assert.ok(!availableModules(account, { ...permissions, caps: { hardware: false } }).some(m => m.id === 'hardware'))
+  assert.deepEqual(availableModules({ username: 'ti@ripconciv.com' }, { allowed: true, sections: [], caps: { hardware: true } }).map(m => m.id), ['hardware', 'treasury'])
+})
+
 test('Mesa: origen HTTPS y módulo configurable', () => {
   assert.equal(helpdeskEntry(), 'https://help.ripconciv.com/api/auth/microsoft/start?entry=hub')
   assert.equal(helpdeskModule().id, 'helpdesk')
