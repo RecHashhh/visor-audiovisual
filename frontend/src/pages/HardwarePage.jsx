@@ -305,13 +305,8 @@ export default function HardwarePage() {
       {filter && <button type="button" className="filter-chip" onClick={() => setFilter(null)}>
         Filtro: {filter.label} ×
       </button>}
-      {tab === 'calidad' && <p className="hw-company-help">
-        Empresa completada: {companyStats.percent.toLocaleString('es', { maximumFractionDigits: 1 })} %
-        {' '}({companyStats.completed.toLocaleString('es')} de {companyStats.total.toLocaleString('es')} equipos).
-        Los gráficos por empresa solo representan ese porcentaje de registros identificados;
-        «Sin empresa» muestra los restantes. Los registros ajenos al grupo se muestran como «Otro registro (revisar)».
-      </p>}
       {tab === 'calidad' && <div className="hw-sources">
+        <Help text="Qué datos faltan en RIP_TIC, para que TI los complete. Arriba, los campos más incompletos. Los gráficos por empresa solo cuentan los equipos con empresa registrada; el resto sale como «Sin empresa» y los ajenos al grupo como «Otro registro (revisar)». Abajo, la fecha de la última lectura de cada fuente." />
         {Object.entries(snapshot.sources || {}).map(([key, source]) => (
           <span key={key} className={source.error ? 'hw-source-error' : ''}>
             {key === 'nomina' ? 'Nómina' : key === 'graph' ? 'Microsoft 365' : 'RIP_TIC'}:

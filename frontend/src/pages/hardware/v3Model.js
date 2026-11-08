@@ -143,11 +143,9 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
     card('Valor de equipos por proyecto', 'proyectos', data.active.map(row => ({ ...row, amount: Number(row.value) || 0 })), 'project', { unit: 'usd' }),
     card('Personal sin computadora por proyecto', 'proyectos', missing, 'project', { detailColumns: personColumns }),
     card('Centros de costo TI y TH', 'proyectos', centerRows, 'status', { detailColumns: model.tables.proyectos[2].columns }));
-  model.cards.calidad = [card('Completitud de computadoras vigentes · %', 'calidad', quality, 'label', {
-    chart: quality, max: 100, qualityFields: true,
-  }), card('Qué corregir primero · campos con más faltantes', 'calidad', quality, 'label', {
-    chart: [...quality].sort((a, b) => b.missing - a.missing).slice(0, 3).map(row => ({ label: row.label, count: row.missing })),
-    qualityFields: true,
+  // Un solo gráfico ordenado de menor a mayor: lo de arriba es lo que hay que corregir primero.
+  model.cards.calidad = [card('Completitud por campo · % de computadoras vigentes', 'calidad', quality, 'label', {
+    chart: [...quality].sort((a, b) => a.count - b.count), max: 100, qualityFields: true,
   })];
   model.tables.calidad.unshift(table('completeness', 'Completitud por campo', quality,
     [['label', 'Campo'], ['count', 'Completitud %', row => `${Math.round(row.count)} %`], ['missing', 'Faltantes'], ['total', 'Computadoras']]));

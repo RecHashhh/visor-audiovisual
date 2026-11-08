@@ -77,8 +77,11 @@ export default function SectionKpis({ tab, data, period, model }) {
       {current('Valor de compra vigente', sum(data.active, 'value'), true)}
       {current('Personal sin computadora', data.people.filter(p => p.statusKey === 'sin_computadora').length)}
     </>}
-    {tab === 'calidad' && [...v.quality].sort((a, b) => b.missing - a.missing).slice(0, 3)
-      .map(row => current(`Corregir: ${row.label}`, row.count, false,
-        `${row.missing} computadoras con dato faltante o inconsistente`, true))}
+    {tab === 'calidad' && <>
+      {model.companyQuality && current('Empresa registrada', model.companyQuality.percent, false,
+        `${model.companyQuality.completed.toLocaleString('es')} de ${model.companyQuality.total.toLocaleString('es')} equipos`, true)}
+      {[...v.quality].sort((a, b) => a.count - b.count).slice(0, 3).map(row => current(row.label, row.count, false,
+        `Faltan ${row.missing.toLocaleString('es')} de ${row.total.toLocaleString('es')} computadoras`, true))}
+    </>}
   </div>;
 }

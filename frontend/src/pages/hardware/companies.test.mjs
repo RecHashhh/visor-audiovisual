@@ -51,7 +51,8 @@ test('tarjetas de calidad y tabla conservan el detalle de empresa original', () 
   assert.equal(model.cards.calidad[0].name, 'Empresa mal registrada');
   assert.equal(model.cards.calidad[0].detailRows.length, 2);
   assert.equal(model.tables.calidad[0].rows[0].ruc, '0920349388');
-  assert.equal(model.cards.calidad[1].max, 100);
+  assert.equal(model.cards.calidad.length, 1);
+  assert.equal(model.companyQuality.total, companyQuality(items, groups).total);
   const detail = { cards: { calidad: [] }, tables: { calidad: [{ id: 'detail' }] } };
   addCompanyQuality(detail, companyQuality(items, groups));
   assert.deepEqual(detail.tables.calidad, [{ id: 'detail' }]);
