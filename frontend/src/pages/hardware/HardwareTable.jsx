@@ -7,6 +7,8 @@ import { number, usd } from '../../components/charts/HardwareCharts';
 
 // Columnas cuyo texto más largo supera esto se ajustan en varias líneas; el resto no se corta.
 const WRAP_AT = 24;
+// Encabezados largos: letra un poco menor; nunca se parten en dos líneas.
+const LONG_HEAD = 18;
 
 // fill: la tabla ocupa el alto restante de la ventana, sin desplazar la página.
 export function Table({
@@ -102,7 +104,7 @@ export function Table({
       <table className="hw-table">
         <thead>
           <tr>
-            {visible.map(c => <th key={c[0]} className={wraps.has(c[0]) ? 'hw-col-wrap' : undefined}
+            {visible.map(c => <th key={c[0]} className={c[1].length > LONG_HEAD ? 'hw-th-long' : undefined}
               aria-sort={order?.key === c[0] ? order.dir === 1 ? 'ascending' : 'descending' : 'none'}>
               <button onClick={() => {
                   setOrder({
