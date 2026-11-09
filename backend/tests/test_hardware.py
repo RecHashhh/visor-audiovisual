@@ -96,6 +96,19 @@ class HardwareTests(unittest.TestCase):
         mesa['assignments'] = [{'itemId': 1, 'cedula': '1111111111'}]
         self.assertEqual(build_snapshot(mesa, payroll)['quality']['toActivate'], [])
 
+    def test_email_found_in_m365_by_name_when_payroll_has_none(self):
+        payroll = [{'cedula': '0958576563', 'name': 'BOCCANEDES ORELLANA BRUNO RENATO', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('448 GYE')},
+                   {'cedula': '0900000001', 'name': 'PEREZ LOPEZ ANA MARIA', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('448 GYE')}]
+        mesa = {'items': [{'id': 1, 'code': 'LT1', 'type': 'LAPTOP', 'active': True}, {'id': 2, 'code': 'LT2', 'type': 'LAPTOP', 'active': True}],
+                'assignments': [{'itemId': 1, 'cedula': '0958576563'}, {'itemId': 2, 'cedula': '0900000001'}]}
+        users = [{'displayName': 'Bruno Boccanedes', 'userPrincipalName': 'bboccanedes@ripconciv.com', 'accountEnabled': True, 'assignedLicenses': [{'skuId': 'p'}]},
+                 {'displayName': 'Ana Pérez', 'userPrincipalName': 'aperez@ripconciv.com', 'accountEnabled': True},
+                 {'displayName': 'Ana Pérez', 'userPrincipalName': 'aperez2@ripconciv.com', 'accountEnabled': True}]
+        people = {p['cedula']: p for p in build_snapshot(mesa, payroll, users, [])['coverage']['people']}
+        self.assertEqual((people['0958576563']['email'], people['0958576563']['status']), ('bboccanedes@ripconciv.com', 'ok'))
+        self.assertEqual(people['0958576563']['emailSource'], 'M365 por nombre')
+        self.assertEqual(people['0900000001']['email'], 'aperez@ripconciv.com')  # «aperez» = inicial + apellido desempata
+
     def test_empty_payroll_does_not_restore_departed_people(self):
         result = build_snapshot({'payroll': [{'cedula': '123', 'name': 'Salida', 'costCenter': '4767-Loja'}]}, [])
         self.assertEqual(result['coverage']['people'], [])

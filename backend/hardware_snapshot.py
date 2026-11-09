@@ -104,6 +104,40 @@ def email_index(users):
     return result
 
 
+PARTICLES = {'DE', 'DEL', 'LA', 'LAS', 'LOS', 'Y'}
+
+
+def name_tokens(value):
+    return [t for t in re.split(r'[^A-Z]+', normalized(value)) if t]
+
+
+def name_directory(users):
+    # Se prepara una vez: tokens del nombre visible y usuario del correo de cada cuenta.
+    return [(u, set(name_tokens(u.get('displayName'))), text(u.get('userPrincipalName')).split('@')[0].lower()) for u in users]
+
+
+def account_by_name(name, ced, directory):
+    """Cuenta M365 de una persona sin correo en nómina ni RIP_TIC: por cédula (employeeId) o por nombre.
+    Nómina: «APELLIDO1 APELLIDO2 NOMBRE1 NOMBRE2». Exige el primer apellido y un nombre, y una sola cuenta ganadora."""
+    for user, _, _ in directory:
+        if ced and cedula(user.get('employeeId')) == ced:
+            return user
+    tokens = [t for t in name_tokens(name) if t not in PARTICLES]
+    if len(tokens) < 3:
+        return None
+    surname, second, given = tokens[0], tokens[1], tokens[2:]
+    best, best_score, tie = None, 0, False
+    for user, words, local in directory:
+        if surname not in words or not any(g in words for g in given):
+            continue
+        score = 2 + (second in words) + sum(g in words for g in given) + 2 * (local == (given[0][0] + surname).lower()) + bool(user.get('accountEnabled'))
+        if score > best_score:
+            best, best_score, tie = user, score, False
+        elif score == best_score:
+            tie = True
+    return None if tie else best
+
+
 def person_status(computers, email, account):
     if not computers:
         return STATES[0]
@@ -180,7 +214,7 @@ def equipment_blocks(items, disposals, requests, year):
 
 
 def coverage_block(people, items, mesa, users, skus, target_areas):
-    accounts = email_index(users)
+    accounts, directory = email_index(users), name_directory(users)
     payroll = {cedula(p.get('cedula')): p for p in mesa.get('payroll', [])}
     custodians = {cedula(p.get('cedula')): p for p in mesa.get('custodians', [])}
     licenses = {s['skuId']: SKU_NAMES.get(s.get('skuPartNumber'), s.get('skuPartNumber')) for s in skus}
@@ -193,8 +227,14 @@ def coverage_block(people, items, mesa, users, skus, target_areas):
         if p.get('area') not in target_areas:
             continue
         email = text(payroll.get(key, {}).get('email') or custodians.get(key, {}).get('email')).lower()
-        account = accounts.get(email)
-        rows.append({**p, 'email': email, 'status': person_status(computers[key], email, account), 'licenses': [licenses.get(l['skuId'], l['skuId']) for l in (account or {}).get('assignedLicenses', [])], 'computers': computers[key]})
+        account, source = accounts.get(email), 'Nómina / RIP_TIC' if email else ''
+        if account is None:
+            # Nómina y RIP_TIC casi nunca traen el correo: se busca la cuenta en M365 por cédula o nombre.
+            found = account_by_name(p.get('name'), key, directory)
+            if found:
+                account, source = found, 'M365 por nombre'
+                email = text(found.get('mail') or found.get('userPrincipalName')).lower()
+        rows.append({**p, 'email': email, 'emailSource': source, 'status': person_status(computers[key], email, account), 'licenses': [licenses.get(l['skuId'], l['skuId']) for l in (account or {}).get('assignedLicenses', [])], 'computers': computers[key]})
     return {'people': rows, 'byArea': [{'area': area, **{s: sum(p['area'] == area and p['status'] == s for p in rows) for s in STATES}} for area in target_areas]}
 
 

@@ -23,7 +23,7 @@ def fetch_graph(token_provider):
     deadline = time.monotonic() + 65
     result = {'users': [], 'skus': []}
     errors = []
-    for key, endpoint in [('users', '/users?$select=userPrincipalName,mail,proxyAddresses,accountEnabled,assignedLicenses,signInActivity,createdDateTime,usageLocation&$top=999'), ('skus', '/subscribedSkus')]:
+    for key, endpoint in [('users', '/users?$select=userPrincipalName,mail,displayName,employeeId,proxyAddresses,accountEnabled,assignedLicenses,signInActivity,createdDateTime,usageLocation&$top=999'), ('skus', '/subscribedSkus')]:
         url = 'https://graph.microsoft.com/v1.0' + endpoint
         try:
             while url:

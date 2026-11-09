@@ -383,7 +383,7 @@ export const EQUIPMENT_COLUMNS = [
 ];
 const PEOPLE_COLUMNS = [
   ['cedula', 'Cédula'], ['name', 'Nombre'], ['position', 'Cargo'], ['area', 'Área'],
-  ['project', 'Proyecto'], ['email', 'Correo'], ['status', 'Estado'],
+  ['project', 'Proyecto'], ['email', 'Correo'], ['emailSource', 'Origen del correo'], ['status', 'Estado'],
   ['licenses', 'Licencias', row => (row.licenses || []).join(', ')],
   ['computers', 'Computadoras', row => (row.computers || [])
     .map(item => `${item.code} · ${item.type}${item.inactive ? ' (activar en RIP_TIC)' : ''}`).join('; ')],
