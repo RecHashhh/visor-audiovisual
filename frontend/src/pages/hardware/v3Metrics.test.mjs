@@ -10,7 +10,7 @@ const today = new Date('2026-11-06T12:00:00Z');
 test('estado: prioridad de reparación, fallas, stock y pertenencia a nómina', () => {
   const item = { cedula: '1', inPayroll: true, usage: 'Backup / Stock disponible' };
   assert.equal(computerState({ ...item, physicalState: 'En reparación' }), 'En reparación');
-  assert.equal(computerState({ cedula: '1', inPayroll: false, consortium: 'METRO' }), 'METRO');
+  assert.equal(computerState({ cedula: '1', inPayroll: false, consortium: 'METRO' }), 'En uso');
   assert.equal(computerState({ cedula: '1', inPayroll: false }), 'Asignada a persona fuera de nómina');
   assert.equal(computerState({ ...item, usage: 'Envío a reparación/revisión técnica', physicalState: 'Con fallas' }), 'En reparación');
   assert.equal(computerState({ ...item, physicalState: 'Con fallas' }), 'Con fallas');

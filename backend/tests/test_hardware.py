@@ -121,6 +121,7 @@ class HardwareTests(unittest.TestCase):
                          ('99001', 'CENTRAL - CONSORCIO FERROVIARIO METRO DE QUITO', 'PRUEBA PRUEBA JUAN CARLOS'))
         self.assertEqual([i['consortium'] for i in snapshot['items']], ['METRO', 'CONFLUENCIA', None])
         self.assertEqual(snapshot['quality']['recoverEquipment'], [3])  # el personal de consorcio no se recupera
+        self.assertEqual([(i['equipmentState'], i['site']) for i in snapshot['items'][:2]], [('En uso', 'Consorcio')] * 2)
 
     def test_company_from_custodian_when_rip_tic_has_none(self):
         payroll = [{'cedula': '0100000007', 'name': 'X', 'area': 'TECNICO', 'project': project('1 P'), 'company': ''}]

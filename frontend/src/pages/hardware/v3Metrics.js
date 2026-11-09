@@ -27,8 +27,8 @@ export function computerState(item) {
   if (usage.includes('reparación') || item.physicalState === 'En reparación') return 'En reparación';
   if (item.physicalState === 'Con fallas') return 'Con fallas';
   if (usage.includes('backup')) return 'Backup / stock';
-  if (item.cedula && !item.inPayroll && item.consortium) return item.consortium; // p. ej. «METRO», «CONFLUENCIA»
-  if (item.cedula) return item.inPayroll ? 'En uso' : 'Asignada a persona fuera de nómina';
+  // Personal de consorcio (METRO, CONFLUENCIA…): fuera de la nómina de RIPCON, pero en uso normal.
+  if (item.cedula) return item.inPayroll || item.consortium ? 'En uso' : 'Asignada a persona fuera de nómina';
   return 'Sin asignar (bodega)';
 }
 export function lastSignIn(activity) {

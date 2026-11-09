@@ -48,7 +48,8 @@ def computer_state(item):
     if 'backup' in usage.lower():
         return 'Backup / stock'
     if item.get('cedula'):
-        return 'En uso' if item.get('inPayroll') else 'Asignada a persona fuera de nómina'
+        # Personal de consorcio: no está en la nómina de RIPCON, pero el equipo está en uso normal.
+        return 'En uso' if item.get('inPayroll') or item.get('consortium') else 'Asignada a persona fuera de nómina'
     return 'Sin asignar (bodega)'
 
 

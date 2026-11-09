@@ -472,7 +472,7 @@ def mesa_extras(items, mesa):
     catalog = site_catalog(mesa)
     for item in items:
         place = sites.get(item['cedula']) or {}
-        item['site'] = text(place.get('site')) or None
+        item['site'] = text(place.get('site')) or ('Consorcio' if item.get('consortium') else None)
         item['city'] = text(place.get('city')) or None
         item['siteKind'] = text(place.get('siteKind')) or None
         policy = policies.get(text(item.get('code')).upper())
