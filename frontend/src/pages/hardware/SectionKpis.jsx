@@ -12,7 +12,7 @@ function links(v, data) {
   const computers = state => ({ section: 'estado', title: state, rows: v.computers.filter(row => row.equipmentState === state) });
   return {
     'Equipos vigentes': { section: 'proyectos', title: 'Equipos vigentes', rows: data.active },
-    'Computadoras vigentes': ['estado', 'computer-state'], 'Equipos comprados': ['compras', 'purchases'],
+    'Computadoras vigentes': ['estado', 'computer-state'], 'Computadoras asignadas': { section: 'estado', title: 'Computadoras asignadas', rows: v.computers.filter(row => row.cedula) }, 'Equipos comprados': ['compras', 'purchases'],
     'Inversión del período': ['compras', 'purchases'], 'Valor de compra': ['compras', 'purchases'],
     'Valor de compra dado de baja': ['bajas', 'disposals'], 'Cobertura de personal': ['personas', 'with-computer'],
     'Ahorro potencial al mes': ['licencias', 'accounts'], 'Ahorro potencial mensual': ['licencias', 'accounts'],
@@ -53,8 +53,9 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
       <Kpi title="Valor de compra dado de baja" rows={v.losses} period={period} money tag={when}
         context={`${measureRows(data, 'disposals', period).length.toLocaleString('es')} equipos dados de baja`}
         onOpen={opener('Valor de compra dado de baja')} />
-      {current('Computadoras vigentes', v.computers.length, false,
-        `de ${data.active.length.toLocaleString('es')} equipos · ${usd(sum(data.active, 'value'))}`, false, 'Hoy')}
+      {/* Igual que el inventario de TI: computadoras asignadas a una persona; bodega aparte. */}
+      {current('Computadoras asignadas', v.computers.filter(row => row.cedula).length, false,
+        `${v.computers.filter(row => !row.cedula).length.toLocaleString('es')} en bodega · ${v.computers.length.toLocaleString('es')} vigentes`, false, 'Hoy')}
       {current('Cobertura de personal', data.people.length ?
         100 * data.people.filter(p => p.statusKey !== 'sin_computadora').length / data.people.length : 0,
       false, 'del personal objetivo con computadora', true, 'Hoy')}
