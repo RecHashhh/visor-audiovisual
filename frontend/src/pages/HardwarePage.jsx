@@ -202,8 +202,15 @@ export default function HardwarePage() {
       people: 'personas', licenses: 'licencias', active: 'proyectos',
       age: 'bajas', quality: 'calidad',
     }[config.measure] || tab;
+    // «Ver detalle» abre la tabla de la tarjeta, no la última que se miró en esa sección.
+    const tableId = config.table || {
+      equipment: 'purchases', value: 'purchases', disposals: 'disposals', requests: 'requests',
+      people: 'people', licenses: 'licenses', active: 'assignments', age: 'age',
+    }[config.measure];
     setTab(section);
     setModes(previous => ({ ...previous, [section]: 'tables' }));
+    if (tableId && (model.tables[section] || []).some(table => table.id === tableId))
+      setTableIds(ids => ({ ...ids, [section]: tableId }));
     setFilter(drillFilter(config, label, series, period));
   };
 
