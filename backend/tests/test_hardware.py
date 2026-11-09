@@ -119,9 +119,20 @@ class HardwareTests(unittest.TestCase):
         first = snapshot['items'][0]
         self.assertEqual((first['project']['code'], first['project']['name'], first['custodian']),
                          ('99001', 'CENTRAL - CONSORCIO FERROVIARIO METRO DE QUITO', 'PRUEBA PRUEBA JUAN CARLOS'))
-        self.assertEqual([i['consortium'] for i in snapshot['items']], ['METRO', 'CONFLUENCIA', None])
+        self.assertEqual([i['consortium'] for i in snapshot['items']], ['CFMQ', 'CONFLUENCIA', None])
         self.assertEqual(snapshot['quality']['recoverEquipment'], [3])  # el personal de consorcio no se recupera
         self.assertEqual([(i['equipmentState'], i['site']) for i in snapshot['items'][:2]], [('En uso', 'Consorcio')] * 2)
+        self.assertEqual([(i['companies'], i['companySource']) for i in snapshot['items'][:2]],
+                         [(['CFMQ'], 'Consorcio (proyecto)'), (['CONFLUENCIA'], 'Consorcio (proyecto)')])
+
+    def test_disposed_and_pending_disposal_states(self):
+        mesa = {'items': [{'id': 1, 'code': 'A', 'type': 'LAPTOP', 'active': False, 'lastCedula': '0100000008', 'lastProjectName': 'CONSORCIO CONFLUENCIA'},
+                          {'id': 2, 'code': 'B', 'type': 'LAPTOP', 'active': True}],
+                'assignments': [{'itemId': 2, 'cedula': '0100000009'}],
+                'disposalRequests': [{'itemId': 2, 'state': 'Pendiente'}]}
+        a, b = build_snapshot(mesa, [])['items']
+        self.assertEqual((a['equipmentState'], a['companies']), ('Dado de baja', ['CONFLUENCIA']))
+        self.assertEqual((b['equipmentState'], b['pendingDisposal']), ('En proceso de baja', True))
 
     def test_company_from_custodian_when_rip_tic_has_none(self):
         payroll = [{'cedula': '0100000007', 'name': 'X', 'area': 'TECNICO', 'project': project('1 P'), 'company': ''}]

@@ -152,7 +152,7 @@ def person_status(computers, email, account):
 
 # Consorcios con personal propio (no está en la nómina de RIPCON). Se reconocen por el proyecto de la asignación.
 CONSORTIA = [('CONFLUENCIA', 'CONFLUENCIA'), ('PPCCPP', 'PPCCPP'), ('OBRAS EC', 'OBRAS-EC'), ('OBRASEC', 'OBRAS-EC'),
-             ('METRO DE QUITO', 'METRO')]
+             ('METRO DE QUITO', 'CFMQ')]  # CFMQ: Consorcio Ferroviario Metro de Quito
 
 
 def consortium(project_text):
@@ -189,11 +189,20 @@ def prepare_equipment(mesa, people):
         if isinstance(companies, str):
             companies = [c.strip() for c in companies.split(';') if c.strip()]
         source = 'RIP_TIC' if companies else ''
-        if not companies and person:
-            # Sin empresa en RIP_TIC: se usa la del custodio según la nómina (estimada, marcada como tal).
-            employer = text(person.get('company')) or ('RIPCONCIV CIA. LTDA' if key in ripconciv else '')
+        # Sin empresa en RIP_TIC: 1) consorcio del proyecto, 2) empresa del custodio en nómina. Si el equipo ya no
+        # está asignado (baja, bodega), se usa su último custodio real.
+        last = cedula(item.get('lastCedula'))
+        holder = key if real_person(key) else (last if real_person(last) else '')
+        holder_project = assigned if key else ' '.join(t for t in (text(item.get('lastProjectCode')), text(item.get('lastProjectName'))) if t)
+        group = consortium(holder_project)
+        if not companies and group:
+            companies, source = [group], 'Consorcio (proyecto)'
+        if not companies and holder in people:
+            employer = text(people[holder].get('company')) or ('RIPCONCIV CIA. LTDA' if holder in ripconciv else '')
             if employer:
                 companies, source = [employer], 'Custodio (nómina)'
+        if not companies and holder in ripconciv:
+            companies, source = ['RIPCONCIV CIA. LTDA'], 'Custodio (nómina)'
         companies = companies or ['Sin empresa']
         area = person.get('area') if person else ''
         area = area if area in AREAS else ('fuera de nómina' if key else 'sin asignar/bodega')
@@ -516,8 +525,11 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
             fallback = project(p.get('costCenter'))
             assignment_people[key] = {**p, 'area': '', 'project': catalog.get(fallback['code'], fallback)}
     items = prepare_equipment(mesa, assignment_people)
+    # Solicitud de baja no rechazada: el equipo sigue activo en RIP_TIC, pero ya no cuenta como vigente.
+    pending = {str(r.get('itemId')) for r in mesa.get('disposalRequests', []) if 'RECHAZ' not in normalized(r.get('state'))}
     for item in items:
         item['inPayroll'] = item['cedula'] in people
+        item['pendingDisposal'] = bool(item.get('active')) and str(item.get('id')) in pending
         item['equipmentState'] = computer_state(item)
     mesa_catalog = mesa_extras(items, mesa)
     blocks = equipment_blocks(items, mesa.get('disposals', []), mesa.get('disposalRequests', []), today.year)

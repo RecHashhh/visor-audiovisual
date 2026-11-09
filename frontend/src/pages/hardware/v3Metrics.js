@@ -23,6 +23,8 @@ export const daysSince = (value, today) => {
   return Math.max(0, Math.floor((+today - Date.parse(value)) / 86400000));
 };
 export function computerState(item) {
+  if (item.active === false) return 'Dado de baja';
+  if (item.pendingDisposal) return 'En proceso de baja';
   const usage = (item.usage || '').toLocaleLowerCase('es');
   if (usage.includes('reparación') || item.physicalState === 'En reparación') return 'En reparación';
   if (item.physicalState === 'Con fallas') return 'Con fallas';

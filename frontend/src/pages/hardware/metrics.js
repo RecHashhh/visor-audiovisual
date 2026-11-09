@@ -166,6 +166,8 @@ export function buildData(snapshot, filters, excludedPositions) {
   }));
   const lookup = new Map(items.map(item => [String(item.id), item]));
   const assignedPeople = new Set(items.filter(item => item.active).map(item => item.cedula));
+  // En proceso de baja: sigue en RIP_TIC como activo, pero no es parte del parque vigente.
+  const vigente = item => item.active && !item.pendingDisposal;
   const dated = (row, date, amount = 1) => ({
     ...row, date, year: dateParts(date)?.year || 'Sin fecha',
     month: dateParts(date) ? MONTHS[dateParts(date).month - 1] : 'Sin fecha', amount,
@@ -199,7 +201,7 @@ export function buildData(snapshot, filters, excludedPositions) {
   });
   return {
     asOf: snapshot.generatedAt,
-    items, active: items.filter(item => item.active), equipment: purchases,
+    items, active: items.filter(vigente), equipment: purchases,
     value: purchases.map(row => ({ ...row, amount: Number(row.value) || 0 })),
     disposals: events(snapshot.disposals || [], 'date'),
     requests: events(snapshot.disposalRequests || [], 'requestDate').map(row => ({

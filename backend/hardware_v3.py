@@ -40,6 +40,10 @@ LICENSE_PRICES = {
 
 
 def computer_state(item):
+    if 'active' in item and not item.get('active'):
+        return 'Dado de baja'
+    if item.get('pendingDisposal'):
+        return 'En proceso de baja'
     usage, physical = item.get('usage') or '', item.get('physicalState') or ''
     if 'reparación' in usage.lower() or physical == 'En reparación':
         return 'En reparación'

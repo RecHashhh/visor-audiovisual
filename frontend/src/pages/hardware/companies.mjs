@@ -6,6 +6,11 @@ export const DEFAULT_GROUP_COMPANIES = [
   { ruc: '0993122882001', shortName: 'Consorcio Puente Daule' },
   { ruc: '1792615593001', shortName: 'Urban Projects' },
 ];
+// Consorcios: no tienen RUC en RIP_TIC; el Hub les asigna el equipo por el proyecto (CFMQ = Metro de Quito).
+export const CONSORTIUM_COMPANIES = ['CFMQ', 'CONFLUENCIA', 'PPCCPP', 'OBRAS-EC']
+  .map(name => ({ ruc: `consorcio:${name}`, shortName: name }));
+export const withConsortia = groups => [...groups,
+  ...CONSORTIUM_COMPANIES.filter(c => !groups.some(g => g.shortName === c.shortName))];
 // Las fotos anteriores solo contienen la razón social. Estas equivalencias exactas
 // permiten leerlas hasta que la fuente entregue también el RUC por empresa.
 const LEGACY_COMPANIES = [
@@ -74,7 +79,7 @@ export function prepareCompanies(snapshot, groups, selected = '') {
 }
 export function companyQuality(items, groups) {
   // Calidad mide lo registrado en RIP_TIC: la empresa tomada del custodio no cuenta como completa.
-  const registered = item => companyRecords(item).length && item.companySource !== 'Custodio (nómina)';
+  const registered = item => companyRecords(item).length && !['Custodio (nómina)', 'Consorcio (proyecto)'].includes(item.companySource);
   const completed = items.filter(registered).length;
   const invalid = items.flatMap(item => companyRecords(item).filter(record => !companyMatch(record, groups))
     .map(record => ({ ...item, registeredCompany: record.name, ruc: record.ruc || 'No disponible en la foto' })));

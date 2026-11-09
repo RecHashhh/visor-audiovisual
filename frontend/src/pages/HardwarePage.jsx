@@ -1,7 +1,7 @@
 import SearchSelect from '../components/SearchSelect';
 import GroupCompanies from './hardware/GroupCompanies';
 import { addCompanyQuality } from './hardware/companyModel';
-import { DEFAULT_GROUP_COMPANIES, companyOptions, prepareCompanies, companyQuality } from './hardware/companies.mjs';
+import { DEFAULT_GROUP_COMPANIES, companyOptions, prepareCompanies, companyQuality, withConsortia } from './hardware/companies.mjs';
 import { useAuthz, hasCap } from '../utils/authz';
 import { extendModel } from './hardware/v3Model';
 import { DEFAULT_PRICES } from './hardware/licensePrices';
@@ -172,11 +172,11 @@ export default function HardwarePage() {
   };
 
   const today = new Date();
-  const companySnapshot = prepareCompanies(snapshot || {}, groupCompanies, company);
+  const companySnapshot = prepareCompanies(snapshot || {}, withConsortia(groupCompanies), company);
   const rawData = groupDisposalReasons(buildData(companySnapshot, { type, scopedCompany: Boolean(company) }, positions), period);
   const licenseScope = scopeLicenses(companySnapshot, rawData, prices, licenseCountry);
   const data = { ...rawData, allLicenses: rawData.licenses, licenses: licenseScope.paidStock };
-  const companyStats = companyQuality(snapshot?.items || [], groupCompanies);
+  const companyStats = companyQuality(snapshot?.items || [], withConsortia(groupCompanies));
   const model = extendModel(buildSectionModel(snapshot || {}, data, period, filter, today),
     companySnapshot, data, period, filter, prices, threshold, licenseCountry);
   addCompanyQuality(model, companyStats);
@@ -260,7 +260,7 @@ export default function HardwarePage() {
       <div className="hw-toolbar hw-filters">
         <label>
           Empresa
-          <SearchSelect aria-label="Empresa" value={company} options={companyOptions(snapshot.items, groupCompanies, item =>
+          <SearchSelect aria-label="Empresa" value={company} options={companyOptions(snapshot.items, withConsortia(groupCompanies), item =>
             periodYears(period).includes(dateParts(item.purchaseDate)?.year))}
             onChange={value => { setCompany(value); setFilter(null); }} />
         </label>
