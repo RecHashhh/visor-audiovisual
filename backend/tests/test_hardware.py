@@ -83,6 +83,19 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual(snapshot['kpis']['en_proceso'], 1)
         self.assertEqual(snapshot['kpis']['autorizadas'], 1)
 
+    def test_inactive_computer_still_assigned_counts_for_the_person(self):
+        payroll = [{'cedula': '1750725267', 'name': 'Gissela', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('Administración Quito')}]
+        mesa = {'items': [{'id': 1, 'code': 'LT00159', 'type': 'LAPTOP', 'active': False}, {'id': 2, 'code': 'LT9', 'type': 'LAPTOP', 'active': False}],
+                'assignments': [{'itemId': 1, 'cedula': '1750725267'}]}
+        snapshot = build_snapshot(mesa, payroll)
+        person = snapshot['coverage']['people'][0]
+        self.assertNotEqual(person['status'], 'sin_computadora')
+        self.assertEqual([(c['code'], c['inactive']) for c in person['computers']], [('LT00159', True)])
+        self.assertEqual(snapshot['kpis']['activeComputers'], 1)
+        self.assertEqual(snapshot['quality']['toActivate'], [1])
+        mesa['assignments'] = [{'itemId': 1, 'cedula': '1111111111'}]
+        self.assertEqual(build_snapshot(mesa, payroll)['quality']['toActivate'], [])
+
     def test_empty_payroll_does_not_restore_departed_people(self):
         result = build_snapshot({'payroll': [{'cedula': '123', 'name': 'Salida', 'costCenter': '4767-Loja'}]}, [])
         self.assertEqual(result['coverage']['people'], [])

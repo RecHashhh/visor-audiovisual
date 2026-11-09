@@ -116,6 +116,11 @@ def person_status(computers, email, account):
     return 'ok' if account.get('assignedLicenses') else 'sin_licencia'
 
 
+def real_person(key):
+    # Cédulas de relleno de RIP_TIC (1111111111, 2222222222...) no son personas.
+    return bool(key) and len(set(key)) > 1
+
+
 def prepare_equipment(mesa, people):
     assignments = {}
     for a in sorted(mesa.get('assignments', []), key=lambda a: text(a.get('date'))):
@@ -132,7 +137,11 @@ def prepare_equipment(mesa, people):
             companies = [companies]
         area = person.get('area') if person else ''
         area = area if area in AREAS else ('fuera de nómina' if key else 'sin asignar/bodega')
-        rows.append({**item, 'type': normalized(item.get('type')), 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': text(a.get('projectName') or a.get('projectCode')), 'custodian': custodians.get(key, {}).get('name') or (person or {}).get('name', '')})
+        kind = normalized(item.get('type'))
+        # Inactiva en RIP_TIC pero con asignación vigente a una persona real: la tiene en la mano, cuenta como activa.
+        # Calidad de datos la lista para que TI la reactive (o cierre la asignación si de verdad está dañada).
+        to_activate = not item.get('active') and kind in ('LAPTOP', 'CPU') and real_person(key)
+        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': text(a.get('projectName') or a.get('projectCode')), 'custodian': custodians.get(key, {}).get('name') or (person or {}).get('name', '')})
     return rows
 
 
@@ -178,7 +187,7 @@ def coverage_block(people, items, mesa, users, skus, target_areas):
     computers = defaultdict(list)
     for i in items:
         if i.get('active') and i['type'] in ('LAPTOP', 'CPU'):
-            computers[i['cedula']].append({k: i.get(k) for k in ('code', 'type', 'brand', 'model', 'year')})
+            computers[i['cedula']].append({**{k: i.get(k) for k in ('code', 'type', 'brand', 'model', 'year')}, 'inactive': bool(i.get('toActivate'))})
     rows = []
     for key, p in people.items():
         if p.get('area') not in target_areas:
@@ -223,7 +232,7 @@ def quality_block(items, people, catalog, mesa_catalog=None):
         if i['cedula'] and (not rip_code or rip_code not in catalog):
             projects[i['ripProject'] or 'Sin proyecto'] += 1
     # Solo ids: los equipos completos ya viajan en items (copiarlos aquí duplicaba ~2 MB de la foto).
-    return {'recoverEquipment': [i['id'] for i in recover], 'unmatchedProjects': [{'project': p, 'count': n} for p, n in projects.items()], 'withoutPurchaseDate': [i['id'] for i in items if i['year'] == 'sin fecha'], 'unassignedComputers': [i['id'] for i in items if i.get('active') and i['type'] in ('LAPTOP', 'CPU') and not i['cedula']]}
+    return {'recoverEquipment': [i['id'] for i in recover], 'unmatchedProjects': [{'project': p, 'count': n} for p, n in projects.items()], 'withoutPurchaseDate': [i['id'] for i in items if i['year'] == 'sin fecha'], 'unassignedComputers': [i['id'] for i in items if i.get('active') and i['type'] in ('LAPTOP', 'CPU') and not i['cedula']], 'toActivate': [i['id'] for i in items if i.get('toActivate')]}
 
 
 

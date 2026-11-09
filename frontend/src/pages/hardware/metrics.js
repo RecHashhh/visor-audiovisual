@@ -383,7 +383,7 @@ const PEOPLE_COLUMNS = [
   ['project', 'Proyecto'], ['email', 'Correo'], ['status', 'Estado'],
   ['licenses', 'Licencias', row => (row.licenses || []).join(', ')],
   ['computers', 'Computadoras', row => (row.computers || [])
-    .map(item => `${item.code} · ${item.type}`).join('; ')],
+    .map(item => `${item.code} · ${item.type}${item.inactive ? ' (activar en RIP_TIC)' : ''}`).join('; ')],
 ];
 const LICENSE_COLUMNS = [
   ['license', 'Licencia'], ['purchased', 'Compradas'], ['assigned', 'Asignadas'],

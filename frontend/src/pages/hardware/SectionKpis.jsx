@@ -29,6 +29,7 @@ function links(v, data) {
     'Con equipo y requisitos digitales pendientes': ['personas', 'people'], 'Computadoras a recuperar': ['personas', 'recover'],
     'Proyectos con equipos': ['proyectos', 'projects'], 'Valor de compra vigente': ['proyectos', 'assignments'],
     'Personal sin computadora': ['personas', 'without-computer'], 'Empresa registrada': ['calidad', 'invalid-company'],
+    'Por activar en RIP_TIC': ['calidad', 'to-activate'],
   };
 }
 
@@ -114,6 +115,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen }) {
     {tab === 'calidad' && <>
       {model.companyQuality && current('Empresa registrada', model.companyQuality.percent, false,
         `${model.companyQuality.completed.toLocaleString('es')} de ${model.companyQuality.total.toLocaleString('es')} equipos`, true)}
+      {current('Por activar en RIP_TIC', v.toActivate.length, false, 'Asignadas pero inactivas: cuentan como activas')}
       {[...v.quality].sort((a, b) => a.count - b.count).slice(0, 3).map(row => current(row.label, row.count, false,
         `Faltan ${row.missing.toLocaleString('es')} de ${row.total.toLocaleString('es')} computadoras`, true))}
     </>}

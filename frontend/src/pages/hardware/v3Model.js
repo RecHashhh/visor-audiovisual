@@ -149,7 +149,10 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
   })];
   model.tables.calidad.unshift(table('completeness', 'Completitud por campo', quality,
     [['label', 'Campo'], ['count', 'Completitud %', row => `${Math.round(row.count)} %`], ['missing', 'Faltantes'], ['total', 'Computadoras']]));
-  model.v3 = { computers, stock, repair, quality, renewal, licenses, licenseScope, losses,
+  // Asignadas a una persona pero inactivas en RIP_TIC: cuentan como activas; TI debe reactivarlas.
+  const toActivate = computers.filter(row => row.toActivate);
+  model.tables.calidad.push(table('to-activate', 'Por activar en RIP_TIC · asignadas pero inactivas', toActivate));
+  model.v3 = { computers, stock, repair, quality, renewal, licenses, licenseScope, losses, toActivate,
     audited: computers.filter(row => row.physicalState).length,
     lastAudit: computers.map(row => row.physicalStateDate).filter(Boolean).sort().at(-1) };
   extendMesa(model, snapshot, data, period, today, equipmentColumns);
