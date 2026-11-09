@@ -175,6 +175,8 @@ def prepare_equipment(mesa, people):
     for a in sorted(mesa.get('assignments', []), key=lambda a: text(a.get('date'))):
         assignments[str(a.get('itemId'))] = a
     custodians = {cedula(p.get('cedula')): p for p in mesa.get('custodians', [])}
+    # La nómina de la Mesa (NominaGP) es solo de RIPCONCIV; el Excel trae la columna EMPRESA.
+    ripconciv = {cedula(p.get('cedula')) for p in mesa.get('payroll', [])}
     rows = []
     for item in mesa.get('items', []):
         a = assignments.get(str(item.get('id')), {})
@@ -183,16 +185,23 @@ def prepare_equipment(mesa, people):
         # Proyecto de la asignación: código + nombre (la Mesa ya resolvió el nombre por TIC_Proyecto → S10 → vista de RIP_TIC).
         assigned = ' '.join(dict.fromkeys(t for t in (text(a.get('projectCode')), text(a.get('projectName'))) if t))
         canonical = person['project'] if person else project(assigned, False)
-        companies = item.get('companies') or ['Sin empresa']
+        companies = item.get('companies') or []
         if isinstance(companies, str):
-            companies = [companies]
+            companies = [c.strip() for c in companies.split(';') if c.strip()]
+        source = 'RIP_TIC' if companies else ''
+        if not companies and person:
+            # Sin empresa en RIP_TIC: se usa la del custodio según la nómina (estimada, marcada como tal).
+            employer = text(person.get('company')) or ('RIPCONCIV CIA. LTDA' if key in ripconciv else '')
+            if employer:
+                companies, source = [employer], 'Custodio (nómina)'
+        companies = companies or ['Sin empresa']
         area = person.get('area') if person else ''
         area = area if area in AREAS else ('fuera de nómina' if key else 'sin asignar/bodega')
         kind = normalized(item.get('type'))
         # Inactiva en RIP_TIC pero con asignación vigente a una persona real: la tiene en la mano, cuenta como activa.
         # Calidad de datos la lista para que TI la reactive (o cierre la asignación si de verdad está dañada).
         to_activate = not item.get('active') and kind in ('LAPTOP', 'CPU') and real_person(key)
-        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': assigned, 'consortium': None if person else consortium(assigned), 'custodian': (person or {}).get('name') or custodians.get(key, {}).get('name') or ''})
+        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'companySource': source, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': assigned, 'consortium': None if person else consortium(assigned), 'custodian': (person or {}).get('name') or custodians.get(key, {}).get('name') or ''})
     return rows
 
 

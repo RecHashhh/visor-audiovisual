@@ -29,13 +29,16 @@ export function companyRecords(item) {
   }).filter(row => row.name && canonical(row.name) !== canonical(NO_COMPANY));
 }
 export function companyMatch(record, groups) {
+  // Sin RUC: nombre igual o que empieza por el nombre corto («RIPCONCIV CIA LTDA» → RIPCONCIV, típico del Excel de nómina).
   return groups.find(group => record.ruc ? group.ruc === record.ruc :
-    canonical(group.shortName) === canonical(record.name));
+    canonical(record.name).startsWith(canonical(group.shortName)));
 }
-export function companyOptions(items, groups) {
+// keep: qué equipos cuentan en el número junto a cada empresa (p. ej. comprados en el período elegido).
+export function companyOptions(items, groups, keep = () => true) {
   const options = groups.map(group => ({ value: group.ruc, label: group.shortName, count: 0 }));
   const none = { value: NO_COMPANY, label: NO_COMPANY, count: 0 };
   const review = new Map();
+  items = items.filter(keep);
   for (const item of items) {
     const records = companyRecords(item);
     if (!records.length) none.count++;
@@ -70,7 +73,9 @@ export function prepareCompanies(snapshot, groups, selected = '') {
   return { ...snapshot, items, coverage };
 }
 export function companyQuality(items, groups) {
-  const completed = items.filter(item => companyRecords(item).length).length;
+  // Calidad mide lo registrado en RIP_TIC: la empresa tomada del custodio no cuenta como completa.
+  const registered = item => companyRecords(item).length && item.companySource !== 'Custodio (nómina)';
+  const completed = items.filter(registered).length;
   const invalid = items.flatMap(item => companyRecords(item).filter(record => !companyMatch(record, groups))
     .map(record => ({ ...item, registeredCompany: record.name, ruc: record.ruc || 'No disponible en la foto' })));
   return { completed, total: items.length, percent: items.length ? completed / items.length * 100 : 0, invalid };

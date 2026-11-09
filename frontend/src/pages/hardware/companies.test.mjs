@@ -57,3 +57,14 @@ test('tarjetas de calidad y tabla conservan el detalle de empresa original', () 
   addCompanyQuality(detail, companyQuality(items, groups));
   assert.deepEqual(detail.tables.calidad, [{ id: 'detail' }]);
 });
+
+test('empresa: nombre largo del Excel, conteo por período y la empresa del custodio no cuenta como registrada', () => {
+  const groups = [{ ruc: '1791344154001', shortName: 'RIPCONCIV' }];
+  const items = [
+    { companies: ['RIPCONCIV CIA LTDA'], purchaseDate: '2026-03-01', companySource: 'Custodio (nómina)' },
+    { companies: ['RIPCONCIV CIA. LTDA'], purchaseDate: '2024-03-01', companySource: 'RIP_TIC' },
+  ];
+  const options = companyOptions(items, groups, item => item.purchaseDate.startsWith('2026'));
+  assert.equal(options.find(o => o.value === '1791344154001').count, 1);
+  assert.equal(companyQuality(items, groups).completed, 1);
+});

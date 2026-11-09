@@ -122,6 +122,17 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual([i['consortium'] for i in snapshot['items']], ['METRO', 'CONFLUENCIA', None])
         self.assertEqual(snapshot['quality']['recoverEquipment'], [3])  # el personal de consorcio no se recupera
 
+    def test_company_from_custodian_when_rip_tic_has_none(self):
+        payroll = [{'cedula': '0100000007', 'name': 'X', 'area': 'TECNICO', 'project': project('1 P'), 'company': ''}]
+        mesa = {'items': [{'id': 1, 'code': 'A', 'type': 'LAPTOP', 'active': True},
+                          {'id': 2, 'code': 'B', 'type': 'LAPTOP', 'active': True, 'companies': 'GEOFORCE S.A.'},
+                          {'id': 3, 'code': 'C', 'type': 'LAPTOP', 'active': True}],
+                'assignments': [{'itemId': 1, 'cedula': '0100000007'}, {'itemId': 2, 'cedula': '0100000007'}],
+                'payroll': [{'cedula': '0100000007'}]}
+        items = build_snapshot(mesa, payroll)['items']
+        self.assertEqual([(i['companies'], i['companySource']) for i in items], [
+            (['RIPCONCIV CIA. LTDA'], 'Custodio (nómina)'), (['GEOFORCE S.A.'], 'RIP_TIC'), (['Sin empresa'], '')])
+
     def test_empty_payroll_does_not_restore_departed_people(self):
         result = build_snapshot({'payroll': [{'cedula': '123', 'name': 'Salida', 'costCenter': '4767-Loja'}]}, [])
         self.assertEqual(result['coverage']['people'], [])

@@ -24,7 +24,7 @@ import { useFit } from './hardware/useFit';
 import { hasChartData } from './hardware/cardData';
 import {
   availableYears, buildData, buildSectionModel, DEFAULT_EXCLUDED, defaultPeriod, drillFilter,
-  groupDisposalReasons, HARDWARE_TYPES, parsePeriod, periodParams,
+  dateParts, groupDisposalReasons, HARDWARE_TYPES, parsePeriod, periodParams, periodYears,
 } from './hardware/metrics';
 import './HardwarePage.css';
 
@@ -260,7 +260,8 @@ export default function HardwarePage() {
       <div className="hw-toolbar hw-filters">
         <label>
           Empresa
-          <SearchSelect aria-label="Empresa" value={company} options={companyOptions(snapshot.items, groupCompanies)}
+          <SearchSelect aria-label="Empresa" value={company} options={companyOptions(snapshot.items, groupCompanies, item =>
+            periodYears(period).includes(dateParts(item.purchaseDate)?.year))}
             onChange={value => { setCompany(value); setFilter(null); }} />
         </label>
         <label>

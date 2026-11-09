@@ -383,6 +383,7 @@ export const DISPOSAL_COLUMNS = [
 export const EQUIPMENT_COLUMNS = [
   ['code', 'Código'], ['type', 'Tipo'], ['brand', 'Marca'], ['model', 'Modelo'],
   ['purchaseDate', 'Fecha de compra'], ['value', 'Valor de compra USD'],
+  ['company', 'Empresa', row => (row.company || []).join(', ')], ['companySource', 'Origen de la empresa'],
   ['cedula', 'Cédula'], ['custodian', 'Custodio'], ['area', 'Área'], ['project', 'Proyecto'],
   ['ripProject', 'Proyecto de asignación'], ['assignmentDate', 'Fecha de asignación'],
   ['active', 'Estado', row => row.active ? 'En uso' : 'Baja'],
