@@ -17,7 +17,8 @@ test('estado: prioridad de reparación, fallas, stock y pertenencia a nómina', 
   assert.equal(computerState(item), 'Backup / stock');
   assert.equal(computerState({ ...item, usage: null }), 'En uso');
   assert.equal(computerState({ cedula: '1' }), 'Asignada a persona fuera de nómina');
-  assert.equal(computerState({}), 'Sin asignar (bodega)');
+  assert.equal(computerState({}), 'Por auditar');
+  assert.equal(computerState({ physicalState: 'Bueno' }), 'Sin asignar (bodega)');
 });
 
 test('último ingreso: toma el más reciente de los tres campos', () => {

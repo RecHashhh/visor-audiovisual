@@ -19,7 +19,8 @@ class HardwareV3Tests(unittest.TestCase):
         self.assertEqual(computer_state(base), 'Backup / stock')
         self.assertEqual(computer_state({**base, 'usage': None}), 'En uso')
         self.assertEqual(computer_state({'cedula': '1'}), 'Asignada a persona fuera de nómina')
-        self.assertEqual(computer_state({}), 'Sin asignar (bodega)')
+        self.assertEqual(computer_state({}), 'Por auditar')
+        self.assertEqual(computer_state({'physicalState': 'Bueno'}), 'Sin asignar (bodega)')
 
     def test_current_assignment_and_departed_payroll(self):
         mesa = {'items': [{'id': 1, 'type': 'LAPTOP', 'active': True, 'physicalState': 'Con fallas',

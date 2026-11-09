@@ -40,6 +40,7 @@
 .hw-tabs .segmented-btn { padding: 6px 12px; font-size: 12px; }
 .hw-kpis-exec { grid-template-columns: repeat(6, minmax(0, 1fr)); margin: 12px 0; }
 .hw-kpis-seven { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.hw-kpis-eight { grid-template-columns: repeat(8, minmax(0, 1fr)); }
 .hw-kpis-exec > div { background: var(--bg2); padding: 12px 14px; gap: 4px; }
 .hw-kpis-exec strong { font-size: 24px; line-height: 1.1; }
 .hw-kpis-exec small { color: var(--text-dim); font-size: 11px; }

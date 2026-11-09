@@ -31,7 +31,8 @@ export function computerState(item) {
   if (usage.includes('backup')) return 'Backup / stock';
   // Personal de consorcio (METRO, CONFLUENCIA…): fuera de la nómina de RIPCON, pero en uso normal.
   if (item.cedula) return item.inPayroll || item.consortium ? 'En uso' : 'Asignada a persona fuera de nómina';
-  return 'Sin asignar (bodega)';
+  // Sin custodio ni auditoría física: no se puede afirmar que esté disponible; TI debe verificarlo.
+  return item.physicalState ? 'Sin asignar (bodega)' : 'Por auditar';
 }
 export function lastSignIn(activity) {
   const dates = ['lastSignInDateTime', 'lastNonInteractiveSignInDateTime', 'lastSuccessfulSignInDateTime']

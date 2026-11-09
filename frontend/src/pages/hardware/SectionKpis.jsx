@@ -18,7 +18,7 @@ function links(v, data) {
     'Ahorro potencial al mes': ['licencias', 'accounts'], 'Ahorro potencial mensual': ['licencias', 'accounts'],
     'Ahorro potencial anual': ['licencias', 'accounts'], 'Licencias asignadas': ['licencias', 'accounts'],
     'Cuentas con actividad desconocida': ['licencias', 'inactive-accounts'],
-    ...Object.fromEntries(['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)',
+    ...Object.fromEntries(['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)', 'Por auditar',
       'Asignada a persona fuera de nómina'].map(state => [state, computers(state)])),
     'Estado físico registrado': ['estado', 'computer-state'], 'Compras sin factura': ['compras', 'without-invoice'],
     'Pedidos por entregar': ['compras', 'deliveries'], 'Entrega promedio · días': ['compras', 'deliveries'],
@@ -45,7 +45,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
   const when = years.length > 1 ? `${years[0]}–${years.at(-1)}` : years[0];
   const flow = (title, measure, money = false, context, tag) =>
     <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} context={context} onOpen={opener(title)} tag={tag} />;
-  return <div className={`hw-kpis hw-kpis-exec${['estado', 'resumen'].includes(tab) ? ' hw-kpis-seven' : ''}`}>
+  return <div className={`hw-kpis hw-kpis-exec${tab === 'estado' ? ' hw-kpis-eight' : tab === 'resumen' ? ' hw-kpis-seven' : ''}`}>
     {tab === 'resumen' && <>
       {/* Primero lo que pasó en el período elegido; después lo que existe hoy. */}
       {flow('Equipos comprados', 'equipment', false, undefined, when)}
@@ -54,8 +54,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
         context={`${measureRows(data, 'disposals', period).length.toLocaleString('es')} equipos dados de baja`}
         onOpen={opener('Valor de compra dado de baja')} />
       {/* Igual que el inventario de TI: computadoras asignadas a una persona; bodega aparte. */}
-      {current('Computadoras asignadas', v.computers.filter(row => row.cedula).length, false,
-        `${v.computers.filter(row => !row.cedula).length.toLocaleString('es')} en bodega · ${v.computers.length.toLocaleString('es')} vigentes`, false, 'Hoy')}
+      {current('Computadoras asignadas', v.computers.filter(row => row.cedula).length, false, undefined, false, 'Hoy')}
       {current('Cobertura de personal', data.people.length ?
         100 * data.people.filter(p => p.statusKey !== 'sin_computadora').length / data.people.length : 0,
       false, 'del personal objetivo con computadora', true, 'Hoy')}
@@ -64,7 +63,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
       {current('Ahorro potencial al mes', v.licenseScope.accountsAvailable ? v.licenses.monthly : null, true, undefined, false, 'Hoy')}
     </>}
     {tab === 'estado' && <>
-      {['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)',
+      {['En uso', 'Backup / stock', 'En reparación', 'Con fallas', 'Sin asignar (bodega)', 'Por auditar',
         'Asignada a persona fuera de nómina'].map(state => current(state,
         v.computers.filter(row => row.equipmentState === state).length))}
       {current('Estado físico registrado', v.computers.length ? 100 * v.audited / v.computers.length : 0,

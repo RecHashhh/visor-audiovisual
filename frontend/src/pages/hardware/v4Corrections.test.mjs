@@ -141,7 +141,7 @@ test('las siglas se conservan en tipos y etiquetas compuestas', () => {
 
 test('modelo: proyecto, antigüedad numérica completa, nota sin fecha y cruces por país', () => {
   const photo = { ...snapshot, generatedAt: '2026-11-06T12:00:00Z', items:
-    [0, 1, 2, 10, 12, null].map((age, id) => ({ id, active: true, type: 'LAPTOP',
+    [0, 1, 2, 10, 12, null].map((age, id) => ({ id, active: true, type: 'LAPTOP', physicalState: 'Bueno',
       project: { code: 'P1', name: 'Obra' },
       purchaseDate: age === null ? null : `${2026 - age}-01-01`,
     })) };
