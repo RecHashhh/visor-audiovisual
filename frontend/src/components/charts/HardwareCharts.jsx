@@ -1,5 +1,5 @@
-import { chartTextLayout, truncateText } from './chartText.mjs';
-import { useEffect, useRef, useState } from 'react';
+import { chartTextLayout, trimLeadingYears, truncateText } from './chartText.mjs';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { typeLabel } from '../../pages/hardware/v3Metrics.js';
 import * as d3 from 'd3';
 
@@ -15,8 +15,9 @@ export const PALETTE = [
 
 // Los segmentos entregan etiqueta, serie y registro para abrir el detalle exacto.
 export default function HardwareChart({
-  data, kind = 'horizontal', onSelect, title, unit = 'number', height = 200, max, fit = false,
+  data: input, kind = 'horizontal', onSelect, title, unit = 'number', height = 200, max, fit = false,
 }) {
+  const data = useMemo(() => kind === 'horizontal' ? input : trimLeadingYears(input), [input, kind]);
   const host = useRef(null);
   const plot = useRef(null);
   // fit: el gráfico toma el alto que le deja su tarjeta (tablero ajustado a la ventana).
@@ -188,7 +189,7 @@ export default function HardwareChart({
         .attr('fill', 'currentColor').style('font-size', '10px'))
       .call(node => node.selectAll('line,path')
         .attr('stroke', axisColor).attr('opacity', .35));
-    const ticks = data.map(row => row.label);
+    const ticks = data.map(row => row.label).filter((_, i) => (data.length - 1 - i) % layout.every === 0);
     const tickCount = unit === 'usd' ? 4 : Math.min(4, Math.ceil(maximum));
     const xAxis = g.append('g').attr('transform', `translate(0,${h})`);
     axis(xAxis, horizontal ?
