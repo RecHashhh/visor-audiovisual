@@ -150,6 +150,21 @@ def person_status(computers, email, account):
     return 'ok' if account.get('assignedLicenses') else 'sin_licencia'
 
 
+# Consorcios con personal propio (no está en la nómina de RIPCON). Se reconocen por el proyecto de la asignación.
+CONSORTIA = [('CONFLUENCIA', 'CONFLUENCIA'), ('PPCCPP', 'PPCCPP'), ('OBRAS EC', 'OBRAS-EC'), ('OBRASEC', 'OBRAS-EC'),
+             ('METRO DE QUITO', 'METRO')]
+
+
+def consortium(project_text):
+    words = ' '.join(re.split(r'[^A-Z0-9]+', normalized(project_text)))
+    for key, label in CONSORTIA:
+        # «Metro de Quito» también es un proyecto propio de RIPCON: solo cuenta si dice «Consorcio».
+        if key in words and (key != 'METRO DE QUITO' or 'CONSORCIO' in words):
+            return label
+    # Consorcio nuevo sin nombre corto: se muestra el proyecto tal cual.
+    return text(project_text) if 'CONSORCIO' in words else None
+
+
 def real_person(key):
     # Cédulas de relleno de RIP_TIC (1111111111, 2222222222...) no son personas.
     return bool(key) and len(set(key)) > 1
@@ -177,7 +192,7 @@ def prepare_equipment(mesa, people):
         # Inactiva en RIP_TIC pero con asignación vigente a una persona real: la tiene en la mano, cuenta como activa.
         # Calidad de datos la lista para que TI la reactive (o cierre la asignación si de verdad está dañada).
         to_activate = not item.get('active') and kind in ('LAPTOP', 'CPU') and real_person(key)
-        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': assigned, 'custodian': (person or {}).get('name') or custodians.get(key, {}).get('name') or ''})
+        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': assigned, 'consortium': None if person else consortium(assigned), 'custodian': (person or {}).get('name') or custodians.get(key, {}).get('name') or ''})
     return rows
 
 
@@ -265,7 +280,8 @@ def project_blocks(items, coverage):
 
 
 def quality_block(items, people, catalog, mesa_catalog=None):
-    recover = [i for i in items if i.get('active') and i['cedula'] and i['cedula'] not in people]
+    # Personal de un consorcio no se «recupera»: no es de la nómina de RIPCON por diseño.
+    recover = [i for i in items if i.get('active') and i['cedula'] and i['cedula'] not in people and not i.get('consortium')]
     projects = defaultdict(int)
     for i in items:
         rip_code = project(i['ripProject'])['code']

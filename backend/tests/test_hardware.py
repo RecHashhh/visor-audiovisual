@@ -109,6 +109,19 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual(people['0100000003']['emailSource'], 'M365 por nombre')
         self.assertEqual(people['0900000001']['email'], 'aperez@ripconciv.com')  # «aperez» = inicial + apellido desempata
 
+    def test_out_of_payroll_shows_custodian_project_and_consortium(self):
+        mesa = {'items': [{'id': i, 'code': f'LT{i}', 'type': 'LAPTOP', 'active': True} for i in (1, 2, 3)],
+                'assignments': [{'itemId': 1, 'cedula': '0100000004', 'projectCode': '99001', 'projectName': 'CENTRAL - CONSORCIO FERROVIARIO METRO DE QUITO'},
+                                {'itemId': 2, 'cedula': '0100000005', 'projectName': 'CONSORCIO CONFLUENCIA - PUEMBO CALDERON'},
+                                {'itemId': 3, 'cedula': '0100000006', 'projectName': '5067-UIO-Metro de Quito-Ripconciv-Generico'}],
+                'custodians': [{'cedula': '0100000004', 'name': 'PRUEBA PRUEBA JUAN CARLOS'}]}
+        snapshot = build_snapshot(mesa, [])
+        first = snapshot['items'][0]
+        self.assertEqual((first['project']['code'], first['project']['name'], first['custodian']),
+                         ('99001', 'CENTRAL - CONSORCIO FERROVIARIO METRO DE QUITO', 'PRUEBA PRUEBA JUAN CARLOS'))
+        self.assertEqual([i['consortium'] for i in snapshot['items']], ['METRO', 'CONFLUENCIA', None])
+        self.assertEqual(snapshot['quality']['recoverEquipment'], [3])  # el personal de consorcio no se recupera
+
     def test_empty_payroll_does_not_restore_departed_people(self):
         result = build_snapshot({'payroll': [{'cedula': '123', 'name': 'Salida', 'costCenter': '4767-Loja'}]}, [])
         self.assertEqual(result['coverage']['people'], [])
