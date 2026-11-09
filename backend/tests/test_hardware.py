@@ -84,29 +84,29 @@ class HardwareTests(unittest.TestCase):
         self.assertEqual(snapshot['kpis']['autorizadas'], 1)
 
     def test_inactive_computer_still_assigned_counts_for_the_person(self):
-        payroll = [{'cedula': '1750725267', 'name': 'Gissela', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('Administración Quito')}]
-        mesa = {'items': [{'id': 1, 'code': 'LT00159', 'type': 'LAPTOP', 'active': False}, {'id': 2, 'code': 'LT9', 'type': 'LAPTOP', 'active': False}],
-                'assignments': [{'itemId': 1, 'cedula': '1750725267'}]}
+        payroll = [{'cedula': '0100000001', 'name': 'Ana', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('Administración Quito')}]
+        mesa = {'items': [{'id': 1, 'code': 'LT90002', 'type': 'LAPTOP', 'active': False}, {'id': 2, 'code': 'LT9', 'type': 'LAPTOP', 'active': False}],
+                'assignments': [{'itemId': 1, 'cedula': '0100000001'}]}
         snapshot = build_snapshot(mesa, payroll)
         person = snapshot['coverage']['people'][0]
         self.assertNotEqual(person['status'], 'sin_computadora')
-        self.assertEqual([(c['code'], c['inactive']) for c in person['computers']], [('LT00159', True)])
+        self.assertEqual([(c['code'], c['inactive']) for c in person['computers']], [('LT90002', True)])
         self.assertEqual(snapshot['kpis']['activeComputers'], 1)
         self.assertEqual(snapshot['quality']['toActivate'], [1])
         mesa['assignments'] = [{'itemId': 1, 'cedula': '1111111111'}]
         self.assertEqual(build_snapshot(mesa, payroll)['quality']['toActivate'], [])
 
     def test_email_found_in_m365_by_name_when_payroll_has_none(self):
-        payroll = [{'cedula': '0958576563', 'name': 'BOCCANEDES ORELLANA BRUNO RENATO', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('448 GYE')},
+        payroll = [{'cedula': '0100000003', 'name': 'ZAMBRANO LEON PEDRO LUIS', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('448 GYE')},
                    {'cedula': '0900000001', 'name': 'PEREZ LOPEZ ANA MARIA', 'area': 'ADMINISTRATIVOS OFICINAS', 'project': project('448 GYE')}]
         mesa = {'items': [{'id': 1, 'code': 'LT1', 'type': 'LAPTOP', 'active': True}, {'id': 2, 'code': 'LT2', 'type': 'LAPTOP', 'active': True}],
-                'assignments': [{'itemId': 1, 'cedula': '0958576563'}, {'itemId': 2, 'cedula': '0900000001'}]}
-        users = [{'displayName': 'Bruno Boccanedes', 'userPrincipalName': 'bboccanedes@ripconciv.com', 'accountEnabled': True, 'assignedLicenses': [{'skuId': 'p'}]},
+                'assignments': [{'itemId': 1, 'cedula': '0100000003'}, {'itemId': 2, 'cedula': '0900000001'}]}
+        users = [{'displayName': 'Pedro Zambrano', 'userPrincipalName': 'pzambrano@ripconciv.com', 'accountEnabled': True, 'assignedLicenses': [{'skuId': 'p'}]},
                  {'displayName': 'Ana Pérez', 'userPrincipalName': 'aperez@ripconciv.com', 'accountEnabled': True},
                  {'displayName': 'Ana Pérez', 'userPrincipalName': 'aperez2@ripconciv.com', 'accountEnabled': True}]
         people = {p['cedula']: p for p in build_snapshot(mesa, payroll, users, [])['coverage']['people']}
-        self.assertEqual((people['0958576563']['email'], people['0958576563']['status']), ('bboccanedes@ripconciv.com', 'ok'))
-        self.assertEqual(people['0958576563']['emailSource'], 'M365 por nombre')
+        self.assertEqual((people['0100000003']['email'], people['0100000003']['status']), ('pzambrano@ripconciv.com', 'ok'))
+        self.assertEqual(people['0100000003']['emailSource'], 'M365 por nombre')
         self.assertEqual(people['0900000001']['email'], 'aperez@ripconciv.com')  # «aperez» = inicial + apellido desempata
 
     def test_empty_payroll_does_not_restore_departed_people(self):

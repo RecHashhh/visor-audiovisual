@@ -165,7 +165,9 @@ def prepare_equipment(mesa, people):
         a = assignments.get(str(item.get('id')), {})
         key = cedula(a.get('cedula'))
         person = people.get(key)
-        canonical = person['project'] if person else project(a.get('projectName') or a.get('projectCode'), False)
+        # Proyecto de la asignación: código + nombre (la Mesa ya resolvió el nombre por TIC_Proyecto → S10 → vista de RIP_TIC).
+        assigned = ' '.join(dict.fromkeys(t for t in (text(a.get('projectCode')), text(a.get('projectName'))) if t))
+        canonical = person['project'] if person else project(assigned, False)
         companies = item.get('companies') or ['Sin empresa']
         if isinstance(companies, str):
             companies = [companies]
@@ -175,7 +177,7 @@ def prepare_equipment(mesa, people):
         # Inactiva en RIP_TIC pero con asignación vigente a una persona real: la tiene en la mano, cuenta como activa.
         # Calidad de datos la lista para que TI la reactive (o cierre la asignación si de verdad está dañada).
         to_activate = not item.get('active') and kind in ('LAPTOP', 'CPU') and real_person(key)
-        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': text(a.get('projectName') or a.get('projectCode')), 'custodian': custodians.get(key, {}).get('name') or (person or {}).get('name', '')})
+        rows.append({**item, 'active': bool(item.get('active')) or to_activate, 'toActivate': to_activate, 'type': kind, 'value': float(item.get('value') or 0), 'year': purchase_year(item.get('purchaseDate')), 'companies': companies, 'cedula': key, 'project': canonical, 'area': area, 'usage': a.get('usage'), 'usageDate': a.get('usageDate'), 'inPayroll': key in people, 'assignmentDate': a.get('date'), 'ripProject': assigned, 'custodian': (person or {}).get('name') or custodians.get(key, {}).get('name') or ''})
     return rows
 
 
