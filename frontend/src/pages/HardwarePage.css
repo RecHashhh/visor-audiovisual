@@ -100,6 +100,9 @@
 .hw-explorer-preview .hw-card { height: auto; min-height: 270px; }
 .hw-kpis-exec > div { min-width: 0; }
 .hw-kpis-exec strong { font-size: clamp(18px, 1.7vw, 24px); }
+/* Indicadores parejos: el título reserva dos líneas, así todas las cifras quedan a la misma altura. */
+.hw-kpis-exec > div > span:first-child { line-height: 1.35; min-height: 2.7em; display: -webkit-box; -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2; overflow: hidden; }
 
 /* Las tarjetas crecen con ejes y leyendas; el texto permanece dentro del ancho. */
 .hw-card { height: auto; min-height: 244px; }

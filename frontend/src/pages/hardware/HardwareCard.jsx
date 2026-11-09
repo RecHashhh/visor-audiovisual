@@ -22,7 +22,7 @@ export function Kpi({ title, rows, period, context, value, money = false, percen
   const open = onOpen ? { role: 'button', tabIndex: 0, className: 'hw-kpi-open', title: 'Ver la tabla', onClick: onOpen,
     onKeyDown: event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onOpen(); } } } : {};
   return <div {...open}>
-    <span>{title}{tag && <em className="hw-kpi-tag">{tag}</em>}</span>
+    <span title={title}>{title}{tag && <em className="hw-kpi-tag">{tag}</em>}</span>
     <strong>{!metric && value === null ? 'Sin dato' : format(metric ? metric.total : value)}</strong>
     {metric?.labels && <small>
       vs {period.a}: {format(metric.a)} ({metric.delta === null ? 'Sin base de comparación' :
