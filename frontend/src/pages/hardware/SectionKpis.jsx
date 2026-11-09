@@ -45,7 +45,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
   const when = years.length > 1 ? `${years[0]}–${years.at(-1)}` : years[0];
   const flow = (title, measure, money = false, context, tag) =>
     <Kpi title={title} rows={measureRows(data, measure, period)} period={period} money={money} context={context} onOpen={opener(title)} tag={tag} />;
-  return <div className={`hw-kpis hw-kpis-exec${tab === 'estado' ? ' hw-kpis-seven' : ''}`}>
+  return <div className={`hw-kpis hw-kpis-exec${['estado', 'resumen'].includes(tab) ? ' hw-kpis-seven' : ''}`}>
     {tab === 'resumen' && <>
       {/* Primero lo que pasó en el período elegido; después lo que existe hoy. */}
       {flow('Equipos comprados', 'equipment', false, undefined, when)}
@@ -58,6 +58,8 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
       {current('Cobertura de personal', data.people.length ?
         100 * data.people.filter(p => p.statusKey !== 'sin_computadora').length / data.people.length : 0,
       false, 'del personal objetivo con computadora', true, 'Hoy')}
+      {current('Con computadora, sin licencia', data.people.filter(p => p.statusKey === 'sin_licencia').length, false,
+        'tienen equipo y cuenta M365 pero ninguna licencia', false, 'Hoy')}
       {current('Ahorro potencial al mes', v.licenseScope.accountsAvailable ? v.licenses.monthly : null, true, undefined, false, 'Hoy')}
     </>}
     {tab === 'estado' && <>
