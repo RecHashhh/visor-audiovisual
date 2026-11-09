@@ -499,6 +499,9 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
         people.filter(row => row.statusKey !== 'sin_computadora'), PEOPLE_COLUMNS),
       table('without-computer', 'Sin computadora',
         people.filter(row => row.statusKey === 'sin_computadora'), PEOPLE_COLUMNS),
+      // Tiene computadora y cuenta M365 activa, pero ninguna licencia asignada.
+      table('without-license', 'Con computadora, sin licencia',
+        people.filter(row => row.statusKey === 'sin_licencia'), PEOPLE_COLUMNS),
       table('excluded', 'Excluidos por cargo', data.excluded, PEOPLE_COLUMNS),
       table('licenses', 'Licencias', licenses, LICENSE_COLUMNS),
       table('blocked', 'Cuentas bloqueadas con licencia',

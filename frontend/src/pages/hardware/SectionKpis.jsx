@@ -25,7 +25,7 @@ function links(v, data) {
     'Valor sin asegurar': ['seguros', 'uninsured'], 'Garantías vencen en 90 días': ['seguros', 'warranty-expiring'],
     'Bajas': ['bajas', 'disposals'], 'Valor de compra perdido': ['bajas', 'disposals'],
     'Computadoras de 5 años o más': ['bajas', 'renewal'], 'Renovación estimada': ['bajas', 'renewal'],
-    'Personal objetivo': ['personas', 'people'], 'Sin computadora': ['personas', 'without-computer'],
+    'Personal objetivo': ['personas', 'people'], 'Con computadora, sin licencia': ['personas', 'without-license'], 'Sin computadora': ['personas', 'without-computer'],
     'Con equipo y requisitos digitales pendientes': ['personas', 'people'], 'Computadoras a recuperar': ['personas', 'recover'],
     'Proyectos con equipos': ['proyectos', 'projects'], 'Valor de compra vigente': ['proyectos', 'assignments'],
     'Personal sin computadora': ['personas', 'without-computer'], 'Empresa registrada': ['calidad', 'invalid-company'],
@@ -92,6 +92,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen, canRecov
     {tab === 'personas' && <>
       {current('Personal objetivo', data.people.length)}
       {current('Sin computadora', data.people.filter(p => p.statusKey === 'sin_computadora').length)}
+      {current('Con computadora, sin licencia', data.people.filter(p => p.statusKey === 'sin_licencia').length)}
       {current('Con equipo y requisitos digitales pendientes', data.people.filter(p =>
         p.statusKey !== 'sin_computadora' && p.statusKey !== 'ok').length)}
       {canRecover && current('Computadoras a recuperar', v.computers.filter(row => row.equipmentState === 'Asignada a persona fuera de nómina').length)}
