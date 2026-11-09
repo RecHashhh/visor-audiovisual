@@ -374,6 +374,12 @@ export function durability(rows) {
 
 
 // Modelo ejecutivo: mismas fuentes para el gráfico y su detalle.
+// Bajas: primero cuándo y por qué; después qué equipo era.
+export const DISPOSAL_COLUMNS = [
+  ['code', 'Código'], ['type', 'Tipo'], ['date', 'Fecha de baja'], ['reason', 'Motivo de baja'],
+  ['note', 'Detalle del motivo'], ['brand', 'Marca'], ['model', 'Modelo'],
+  ['purchaseDate', 'Fecha de compra'], ['value', 'Valor de compra USD'], ['project', 'Proyecto'],
+];
 export const EQUIPMENT_COLUMNS = [
   ['code', 'Código'], ['type', 'Tipo'], ['brand', 'Marca'], ['model', 'Modelo'],
   ['purchaseDate', 'Fecha de compra'], ['value', 'Valor de compra USD'],
@@ -476,10 +482,7 @@ export function buildSectionModel(snapshot, data, period, filter, today) {
       table('purchases', 'Equipos comprados', purchases, EQUIPMENT_COLUMNS),
     ],
     bajas: [
-      table('disposals', 'Bajas registradas', disposals, [
-        ['code', 'Código'], ['type', 'Tipo'], ['date', 'Fecha'],
-        ['reason', 'Motivo'], ['note', 'Nota'],
-      ]),
+      table('disposals', 'Bajas registradas', disposals, DISPOSAL_COLUMNS),
       table('requests', 'Solicitudes de baja', requests, [
         ['code', 'Código'], ['type', 'Tipo'], ['requestDate', 'Fecha'],
         ['state', 'Estado'], ['reason', 'Motivo'], ['note', 'Nota'],

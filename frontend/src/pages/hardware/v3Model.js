@@ -1,4 +1,4 @@
-import { aggregate, measureRows, sum } from './metrics.js';
+import { aggregate, DISPOSAL_COLUMNS, measureRows, sum } from './metrics.js';
 import { computer, computerState, completeness, daysSince, hasInvoice, licenseAnalysis, renewalBudget } from './v3Metrics.js';
 import { DEFAULT_PRICES } from './licensePrices.js';
 import { ageDate } from './metrics.js';
@@ -128,7 +128,7 @@ export function extendModel(model, snapshot, data, period, filter, prices = DEFA
   ];
   model.tables.compras.push(table('without-invoice', 'Compras sin factura', purchases.filter(row => !hasInvoice(row))));
   model.cards.bajas = [model.cards.bajas[0],
-    card('Valor perdido por motivo de baja', 'bajas', losses, 'reason', { unit: 'usd' }),
+    card('Valor perdido por motivo de baja', 'bajas', losses, 'reason', { unit: 'usd', detailColumns: DISPOSAL_COLUMNS }),
     ...model.cards.bajas.slice(2, 3), model.cards.bajas[4],
     card('Solicitudes pendientes: antigüedad en días', 'bajas', pending, 'code', {
       detailColumns: [...equipmentColumns, ['pendingDays', 'Días pendientes']],
