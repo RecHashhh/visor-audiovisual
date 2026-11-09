@@ -24,7 +24,7 @@ import { useFit } from './hardware/useFit';
 import { hasChartData } from './hardware/cardData';
 import {
   availableYears, buildData, buildSectionModel, DEFAULT_EXCLUDED, defaultPeriod, drillFilter,
-  groupDisposalReasons, parsePeriod, periodParams,
+  groupDisposalReasons, HARDWARE_TYPES, parsePeriod, periodParams,
 } from './hardware/metrics';
 import './HardwarePage.css';
 
@@ -180,6 +180,12 @@ export default function HardwarePage() {
   const model = extendModel(buildSectionModel(snapshot || {}, data, period, filter, today),
     companySnapshot, data, period, filter, prices, threshold, licenseCountry);
   addCompanyQuality(model, companyStats);
+  // «Computadoras a recuperar» (personas fuera de nómina con equipo) solo para el Equipo TI y administración.
+  const canRecover = Boolean(me?.groups?.includes('equipo-ti') || me?.isAdmin);
+  if (!canRecover) {
+    model.tables.personas = model.tables.personas.filter(row => row.id !== 'recover');
+    model.cards.personas = model.cards.personas.filter(row => row.name !== 'Computadoras a recuperar');
+  }
   const drill = (config, label, series) => {
     if (config.detailRows) {
       const rows = config.qualityFields ? config.detailRows.find(row => row.label === label)?.missingRows ||
@@ -253,7 +259,7 @@ export default function HardwarePage() {
         <label>
           Tipo
           <SearchSelect aria-label="Tipo de equipo" value={type} onChange={value => { setType(value); setFilter(null); }}
-            options={[{ value: '', label: 'Todos' }, ...[...new Set(snapshot.items.map(item => item.type))].sort()
+            options={[{ value: '', label: 'Todos' }, ...HARDWARE_TYPES
               .map(value => ({ value, label: typeLabel(value) }))]} />
         </label>
         <PeriodControl period={period} years={availableYears(snapshot)} today={today}
@@ -325,7 +331,7 @@ export default function HardwarePage() {
         ))}
       </div>}
       {tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') && <>
-        <SectionKpis tab={tab} data={data} period={period} snapshot={snapshot} model={model} onOpen={openKpi} />
+        <SectionKpis tab={tab} canRecover={canRecover} data={data} period={period} snapshot={snapshot} model={model} onOpen={openKpi} />
         {tab === 'licencias' && <LicenseInventory scope={licenseScope} />}
         <div className={`hw-cards${fitCards ? ' hw-cards-fit' : ''}`} ref={cardsRef}
           style={fitCards && cardsHeight ? { height: cardsHeight } : undefined}>

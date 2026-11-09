@@ -33,7 +33,7 @@ function links(v, data) {
   };
 }
 
-export default function SectionKpis({ tab, data, period, model, onOpen }) {
+export default function SectionKpis({ tab, data, period, model, onOpen, canRecover = false }) {
   const v = model.v3, m = model.mesa;
   const map = links(v, data);
   const target = title => map[title] || (/^Pólizas vencen/.test(title) ? ['seguros', 'policies-expiring'] :
@@ -94,7 +94,7 @@ export default function SectionKpis({ tab, data, period, model, onOpen }) {
       {current('Sin computadora', data.people.filter(p => p.statusKey === 'sin_computadora').length)}
       {current('Con equipo y requisitos digitales pendientes', data.people.filter(p =>
         p.statusKey !== 'sin_computadora' && p.statusKey !== 'ok').length)}
-      {current('Computadoras a recuperar', v.computers.filter(row => row.equipmentState === 'Asignada a persona fuera de nómina').length)}
+      {canRecover && current('Computadoras a recuperar', v.computers.filter(row => row.equipmentState === 'Asignada a persona fuera de nómina').length)}
     </>}
     {tab === 'licencias' && <>
       {current('Licencias compradas', v.licenseScope.inventoryGlobal ? sum(v.licenseScope.paidStock, 'purchased') : null,

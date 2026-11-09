@@ -151,12 +151,15 @@ function supplierLookup(snapshot) {
     [key, typeof value === 'string' ? value : value?.supplier || key]));
 }
 
+// De momento Hardware depura solo estos tipos; impresoras, teléfonos y demás quedan para después.
+export const HARDWARE_TYPES = ['LAPTOP', 'CPU', 'MONITOR'];
+
 export function buildData(snapshot, filters, excludedPositions) {
   const { company = '', type = '', scopedCompany = false } = filters;
   const suppliers = supplierLookup(snapshot);
   const items = (snapshot.items || []).filter(item =>
     (!company || (item.companies || []).includes(company)) &&
-    (type ? item.type === type : item.type !== 'MUEBLE')).map(item => ({
+    (type ? item.type === type : HARDWARE_TYPES.includes(item.type))).map(item => ({
     ...item, company: item.companies?.length ? item.companies : ['Sin empresa'],
     supplier: suppliers[item.supplierRuc] || 'Sin proveedor identificado',
     project: projectName(item.project),
