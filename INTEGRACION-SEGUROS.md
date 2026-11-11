@@ -6,7 +6,7 @@ La configuración pública de las fichas está en `frontend/src/config/hubModule
 
 Inicialmente la ficha de Seguros se muestra a Daniel, Germania y Jacqueline por los correos confirmados, y a William por su identificador Microsoft verificado. Se exige además que el servidor del Hub confirme el acceso. Si falla la verificación de permisos se ofrece Reintentar y no se habilitan acciones administrativas.
 
-Seguros recibe el acceso en `/api/auth/microsoft/start?entry=hub`, con OIDC y PKCE propios. Entra aprovecha su sesión existente en el navegador: no se copian tokens ni cookies entre dominios. El servidor de Seguros valida firma, audiencia, tenant, nonce, estado de un solo uso, navegador y la lista de revisión. No es necesario registrar una contraseña adicional. Microsoft puede pedir consentimiento o autenticación si la sesión o sus políticas lo requieren.
+Seguros recibe el acceso en `/api/auth/microsoft/start?entry=hub`, con OIDC y PKCE propios. El Hub agrega el `login_hint` de la cuenta Microsoft ya autenticada para que Entra reutilice y seleccione esa sesión cuando esté disponible; no se copian tokens ni cookies entre dominios. El servidor de Seguros valida firma, audiencia, tenant, nonce, estado de un solo uso, navegador y la lista de revisión. No es necesario registrar una contraseña adicional. Microsoft puede pedir consentimiento, MFA o autenticación si la sesión expiró o sus políticas lo requieren.
 
 Antes de publicar el Hub, desplegar Seguros y activar la configuración de `docs/ACCESO-REVISION.md` de ese repositorio. Cada módulo conserva su sesión local; cerrar sesión en una aplicación no cierra Microsoft 365 ni las otras aplicaciones. No se ha implementado cierre global del Hub.
 

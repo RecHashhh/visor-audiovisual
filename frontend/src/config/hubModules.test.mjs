@@ -15,7 +15,8 @@ test('selector: permisos confirmados, revisión limitada y destino seguro', () =
   assert.equal(insuranceEntry({ insuranceUrl: 'https://example.com/?redirect=bad' }), null)
   const william = { username: 'william@ripconciv.com', idTokenClaims: { oid: '46107a85-cfda-45fb-a058-ff32f1d8e9c9' } }
   assert.ok(availableModules(william, permissions).some(m => m.id === 'insurance'))
-  assert.match(insuranceEntry(), /\/api\/auth\/microsoft\/start\?entry=hub$/)
+  assert.equal(insuranceEntry({}, account), 'https://ripconciv-seguros-web-dcajb6cng8fkg3et.eastus-01.azurewebsites.net/api/auth/microsoft/start?login_hint=jmorales%40ripconciv.com&entry=hub')
+  assert.equal(insuranceEntry({}, { username: 'invalid' }), 'https://ripconciv-seguros-web-dcajb6cng8fkg3et.eastus-01.azurewebsites.net/api/auth/microsoft/start?entry=hub')
 })
 
 test('Hardware: módulo propio solo con la capacidad hardware', () => {

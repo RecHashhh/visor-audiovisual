@@ -9,11 +9,14 @@ const defaults = {
   insuranceReviewEmails: ['dmesias@ripconciv.com', 'jmorales@ripconciv.com', 'gnaranjo@ripconciv.com'],
   insuranceReviewOids: ['46107a85-cfda-45fb-a058-ff32f1d8e9c9'],
 }
-export function insuranceEntry(settings = {}) {
+export function insuranceEntry(settings = {}, account) {
   try {
     const url = new URL(settings.insuranceUrl || defaults.insuranceUrl)
     if (url.protocol !== 'https:' || url.username || url.password || url.pathname !== '/' || url.search || url.hash) return null
-    return `${url.origin}/api/auth/microsoft/start?entry=hub`
+    const email = String(account?.username || '').trim()
+    if (email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) url.searchParams.set('login_hint', email)
+    url.searchParams.set('entry', 'hub')
+    return `${url.origin}/api/auth/microsoft/start?${url.searchParams}`
   } catch { return null }
 }
 export function availableModules(account, authorization, settings = {}) {
@@ -30,7 +33,7 @@ export function availableModules(account, authorization, settings = {}) {
   const oid = String(account.idTokenClaims?.oid || '').toLowerCase()
   const emailAllowed = Array.isArray(config.insuranceReviewEmails) && config.insuranceReviewEmails.some(value => String(value).toLowerCase() === email)
   const oidAllowed = Array.isArray(config.insuranceReviewOids) && config.insuranceReviewOids.some(value => String(value).toLowerCase() === oid)
-  const href = insuranceEntry(config)
+  const href = insuranceEntry(config, account)
   if (config.insuranceEnabled === true && href && (emailAllowed || oidAllowed)) modules.push({ id: 'insurance', title: 'Consulta de seguros', description: 'Consulta el personal asegurado, sus pólizas y vigencias.', href, external: true })
   const treasuryHref = treasuryEntry(config)
   if (config.treasuryEnabled === true && treasuryHref) modules.push({ id: 'treasury', title: 'Tesorería', description: 'Consulta facturas, propuestas y el flujo de pagos.', href: treasuryHref, external: true })
