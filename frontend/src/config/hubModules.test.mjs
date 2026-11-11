@@ -5,7 +5,7 @@ const account = { username: 'jmorales@ripconciv.com' }
 const permissions = { allowed: true, sections: '*' }
 test('selector: permisos confirmados, revisión limitada y destino seguro', () => {
   assert.deepEqual(availableModules(account, permissions).map(m => m.id), ['audiovisual', 'insurance', 'treasury'])
-  assert.deepEqual(availableModules({ username: 'otro@ripconciv.com' }, permissions).map(m => m.id), ['audiovisual', 'treasury'])
+  assert.deepEqual(availableModules({ username: 'otro@ripconciv.com' }, permissions).map(m => m.id), ['audiovisual', 'insurance', 'treasury'])
   assert.deepEqual(availableModules(account, { ...permissions, degraded: true }), [])
   assert.deepEqual(availableModules(account, { ...permissions, allowed: false }), [])
   assert.deepEqual(availableModules(null, permissions), [])
@@ -22,7 +22,7 @@ test('selector: permisos confirmados, revisión limitada y destino seguro', () =
 test('Hardware: módulo propio solo con la capacidad hardware', () => {
   assert.ok(availableModules(account, { ...permissions, caps: { hardware: true } }).some(m => m.id === 'hardware' && m.href === '/hardware' && !m.external))
   assert.ok(!availableModules(account, { ...permissions, caps: { hardware: false } }).some(m => m.id === 'hardware'))
-  assert.deepEqual(availableModules({ username: 'ti@ripconciv.com' }, { allowed: true, sections: [], caps: { hardware: true } }).map(m => m.id), ['hardware', 'treasury'])
+  assert.deepEqual(availableModules({ username: 'ti@ripconciv.com' }, { allowed: true, sections: [], caps: { hardware: true } }).map(m => m.id), ['hardware', 'insurance', 'treasury'])
 })
 
 test('Mesa: origen HTTPS y módulo configurable', () => {
@@ -40,14 +40,14 @@ test('Mesa: origen HTTPS y módulo configurable', () => {
 test('Tesorería: disponible para cualquier cuenta autorizada del Hub, con destino HTTPS configurable', () => {
   const ordinary = { username: 'persona@ripconciv.com' }
   const modules = availableModules(ordinary, { allowed: true, sections: [] })
-  assert.deepEqual(modules.map(m => m.id), ['treasury'])
-  assert.equal(modules[0].title, 'Tesorería')
-  assert.equal(modules[0].external, true)
-  assert.equal(modules[0].href, 'https://appweb-tesoreriaweb-ahend3bzcpecaffv.eastus-01.azurewebsites.net/')
+  assert.deepEqual(modules.map(m => m.id), ['insurance', 'treasury'])
+  assert.equal(modules[1].title, 'Tesorería')
+  assert.equal(modules[1].external, true)
+  assert.equal(modules[1].href, 'https://appweb-tesoreriaweb-ahend3bzcpecaffv.eastus-01.azurewebsites.net/')
   assert.equal(treasuryEntry({ treasuryUrl: 'https://tesoreria.example' }), 'https://tesoreria.example/')
-  assert.deepEqual(availableModules(ordinary, { allowed: true, sections: [] }, { treasuryEnabled: false }), [])
+  assert.deepEqual(availableModules(ordinary, { allowed: true, sections: [] }, { treasuryEnabled: false }).map(m => m.id), ['insurance'])
   for (const treasuryUrl of ['http://example.com', 'javascript:alert(1)', 'https://user:password@example.com', 'https://example.com/path', 'https://example.com/?next=bad', 'https://example.com/#bad', 'invalid']) {
     assert.equal(treasuryEntry({ treasuryUrl }), null)
-    assert.deepEqual(availableModules(ordinary, { allowed: true, sections: [] }, { treasuryUrl }), [])
+    assert.deepEqual(availableModules(ordinary, { allowed: true, sections: [] }, { treasuryUrl }).map(m => m.id), ['insurance'])
   }
 })

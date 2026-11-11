@@ -6,8 +6,6 @@ const defaults = {
   treasuryEnabled: true,
   insuranceUrl: 'https://ripconciv-seguros-web-dcajb6cng8fkg3et.eastus-01.azurewebsites.net',
   insuranceEnabled: true,
-  insuranceReviewEmails: ['dmesias@ripconciv.com', 'jmorales@ripconciv.com', 'gnaranjo@ripconciv.com'],
-  insuranceReviewOids: ['46107a85-cfda-45fb-a058-ff32f1d8e9c9'],
 }
 export function insuranceEntry(settings = {}, account) {
   try {
@@ -29,12 +27,8 @@ export function availableModules(account, authorization, settings = {}) {
   if (authorization.caps?.hardware === true) {
     modules.push({ id: 'hardware', title: 'Hardware', description: 'Inventario de equipos, compras, bajas, licencias y seguros.', href: '/hardware', external: false })
   }
-  const email = String(account.username || '').trim().toLowerCase()
-  const oid = String(account.idTokenClaims?.oid || '').toLowerCase()
-  const emailAllowed = Array.isArray(config.insuranceReviewEmails) && config.insuranceReviewEmails.some(value => String(value).toLowerCase() === email)
-  const oidAllowed = Array.isArray(config.insuranceReviewOids) && config.insuranceReviewOids.some(value => String(value).toLowerCase() === oid)
   const href = insuranceEntry(config, account)
-  if (config.insuranceEnabled === true && href && (emailAllowed || oidAllowed)) modules.push({ id: 'insurance', title: 'Consulta de seguros', description: 'Consulta el personal asegurado, sus pólizas y vigencias.', href, external: true })
+  if (config.insuranceEnabled === true && href) modules.push({ id: 'insurance', title: 'Consulta de seguros', description: 'Consulta el personal asegurado, sus pólizas y vigencias.', href, external: true })
   const treasuryHref = treasuryEntry(config)
   if (config.treasuryEnabled === true && treasuryHref) modules.push({ id: 'treasury', title: 'Tesorería', description: 'Consulta facturas, propuestas y el flujo de pagos.', href: treasuryHref, external: true })
   return modules
