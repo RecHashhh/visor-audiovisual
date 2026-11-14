@@ -6,7 +6,7 @@ from collections import defaultdict
 from datetime import date, datetime, timezone
 from io import BytesIO
 
-AREAS = ['OBRERO', 'OPERATIVO', 'TECNICO', 'ADMINISTRATIVO PROYECTOS', 'ADMINISTRATIVOS OFICINAS']
+AREAS = ['OBRERO', 'OPERATIVO', 'TECNICO', 'ADMINISTRATIVO PROYECTOS', 'ADMINISTRATIVOS OFICINAS', 'PASANTES']
 TARGET_AREAS = AREAS[2:]
 STATES = ['sin_computadora', 'sin_correo', 'sin_cuenta_m365', 'cuenta_bloqueada', 'sin_licencia', 'ok']
 SKU_NAMES = {
@@ -170,7 +170,8 @@ def real_person(key):
     return bool(key) and len(set(key)) > 1
 
 
-def prepare_equipment(mesa, people):
+def prepare_equipment(mesa, people, valid_areas=None):
+    valid_areas = AREAS if valid_areas is None else valid_areas
     assignments = {}
     for a in sorted(mesa.get('assignments', []), key=lambda a: text(a.get('date'))):
         assignments[str(a.get('itemId'))] = a
@@ -205,7 +206,7 @@ def prepare_equipment(mesa, people):
             companies, source = ['RIPCONCIV CIA. LTDA'], 'Custodio (nómina)'
         companies = companies or ['Sin empresa']
         area = person.get('area') if person else ''
-        area = area if area in AREAS else ('fuera de nómina' if key else 'sin asignar/bodega')
+        area = area if area in valid_areas else ('fuera de nómina' if key else 'sin asignar/bodega')
         kind = normalized(item.get('type'))
         # Inactiva en RIP_TIC pero con asignación vigente a una persona real: la tiene en la mano, cuenta como activa.
         # Calidad de datos la lista para que TI la reactive (o cierre la asignación si de verdad está dañada).
@@ -273,9 +274,9 @@ def coverage_block(people, items, mesa, users, skus, target_areas):
     return {'people': rows, 'byArea': [{'area': area, **{s: sum(p['area'] == area and p['status'] == s for p in rows) for s in STATES}} for area in target_areas]}
 
 
-def project_blocks(items, coverage):
+def project_blocks(items, coverage, valid_areas=None):
     projects = {}
-    areas = {a: 0 for a in [*AREAS, 'fuera de nómina', 'sin asignar/bodega']}
+    areas = {a: 0 for a in [*(AREAS if valid_areas is None else valid_areas), 'fuera de nómina', 'sin asignar/bodega']}
     def row(p):
         key = (p['code'], p['name'], p['homologated'])
         return projects.setdefault(key, {**p, 'laptops': 0, 'cpu': 0, 'other': 0, 'value': 0, 'targetPeople': 0, 'withoutComputer': 0, 'purchasesByYear': {}, 'states': {}})
@@ -510,11 +511,25 @@ def deliveries_block(mesa):
 
 def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None, today=None, target_areas=None):
     mesa, today = mesa or {}, today or date.today()
-    target_areas = [normalized(a) for a in (target_areas or TARGET_AREAS)]
+    # Una lista recibida (incluso vacía) es autoritativa. Entorno y constantes solo respaldan snapshots antiguos.
+    definitions = mesa.get('areas')
+    if isinstance(definitions, list):
+        valid_areas = list(dict.fromkeys(normalized(a['name']) for a in definitions if isinstance(a, dict) and text(a.get('name')) and isinstance(a.get('countsForCoverage'), bool)))
+        target_areas = list(dict.fromkeys(normalized(a['name']) for a in definitions if isinstance(a, dict) and text(a.get('name')) and a.get('countsForCoverage') is True))
+    else:
+        valid_areas = AREAS
+        target_areas = [normalized(a) for a in (TARGET_AREAS if target_areas is None else target_areas)]
+        target_areas = [a for a in dict.fromkeys(target_areas) if a in valid_areas]
     # Una nómina cargada es autoritativa: las salidas no reaparecen vía NominaGP.
     people = {p['cedula']: dict(p) for p in (payroll or [])}
     if payroll is None:
-        people = {cedula(p.get('cedula')): {**p, 'cedula': cedula(p.get('cedula')), 'area': '', 'project': project(p.get('costCenter'))} for p in mesa.get('payroll', [])}
+        people = {cedula(p.get('cedula')): {**p, 'cedula': cedula(p.get('cedula')), 'area': normalized(p.get('area')), 'project': project(p.get('costCenter'))} for p in mesa.get('payroll', [])}
+    for p in people.values():
+        p['area'] = normalized(p.get('area'))
+        if p['area'] not in valid_areas:
+            p['area'] = ''
+        if payroll is not None:
+            p['areaSource'] = 'Excel' if p['area'] else 'sin área'
     catalog = {p['project']['code']: p['project'] for p in people.values() if p['project']['code']}
     for p in people.values():
         p['project'] = catalog.get(p['project']['code'], p['project'])
@@ -524,7 +539,7 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
         if key and key not in assignment_people:
             fallback = project(p.get('costCenter'))
             assignment_people[key] = {**p, 'area': '', 'project': catalog.get(fallback['code'], fallback)}
-    items = prepare_equipment(mesa, assignment_people)
+    items = prepare_equipment(mesa, assignment_people, valid_areas)
     # Solicitud de baja no rechazada: el equipo sigue activo en RIP_TIC, pero ya no cuenta como vigente.
     pending = {str(r.get('itemId')) for r in mesa.get('disposalRequests', []) if 'RECHAZ' not in normalized(r.get('state'))}
     for item in items:
@@ -547,4 +562,5 @@ def build_snapshot(mesa=None, payroll=None, users=None, skus=None, sources=None,
     ])
     blocks['licenses']['accounts'] = license_accounts(users or [], skus or [], contacts)
     blocks['costCenters'] = cost_center_block(people, items, mesa)
-    return {'generatedAt': datetime.now(timezone.utc).isoformat(), 'kpis': kpis, **blocks, **project_blocks(items, coverage), 'coverage': coverage, 'quality': quality_block(items, people, catalog, mesa_catalog), 'deliveries': deliveries_block(mesa), 'catalogSites': len({(v['code'], v['name']) for v in mesa_catalog.values()}), 'sources': sources or {}, 'items': items, 'payrollUploaded': payroll is not None}
+    has_areas = any(p.get('area') for p in people.values())
+    return {'generatedAt': datetime.now(timezone.utc).isoformat(), 'kpis': kpis, **blocks, **project_blocks(items, coverage, valid_areas), 'coverage': coverage, 'quality': quality_block(items, people, catalog, mesa_catalog), 'deliveries': deliveries_block(mesa), 'catalogSites': len({(v['code'], v['name']) for v in mesa_catalog.values()}), 'sources': sources or {}, 'items': items, 'payrollUploaded': payroll is not None, 'hasAreas': has_areas, 'areaSource': ('Excel' if payroll is not None else 'Helpdesk') if has_areas else 'sin área'}

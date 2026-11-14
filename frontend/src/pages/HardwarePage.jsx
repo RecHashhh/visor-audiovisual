@@ -1,4 +1,5 @@
 import SearchSelect from '../components/SearchSelect';
+import { areaStatus } from './hardware/areaStatus';
 import GroupCompanies from './hardware/GroupCompanies';
 import { addCompanyQuality } from './hardware/companyModel';
 import { DEFAULT_GROUP_COMPANIES, companyOptions, prepareCompanies, companyQuality, withConsortia } from './hardware/companies.mjs';
@@ -242,6 +243,24 @@ export default function HardwarePage() {
   const cardsHeight = useFit(cardsRef, fitCards, cardRows * 200 + (cardRows - 1) * 12,
     [tab, viewMode, cardCount, cardCols, company, type, period, filter, busy]);
 
+  // Enlace desde la Mesa: todos los tipos, sin el recorte LAPTOP/CPU/MONITOR del tablero.
+  const custodian = new URLSearchParams(window.location.search).get('custodian')?.trim();
+  if (custodian) {
+    const normalize = value => String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('es').trim();
+    const rows = (snapshot?.items || []).filter(item => normalize(item.cedula) === normalize(custodian) || normalize(item.custodian) === normalize(custodian));
+    return <div className="hw-page">
+      <div className="hw-toolbar"><h1>Equipos de {rows[0]?.custodian || custodian}</h1>
+        {snapshot && <span className="hw-date">Foto al {dateLabel(snapshot.generatedAt)}</span>}
+        <button type="button" className="btn" disabled={busy} onClick={() => update()}>{busy ? 'Actualizando…' : 'Actualizar ahora'}</button>
+        <a className="btn" href="/hardware">Ver tablero</a>
+      </div>
+      {error && <div role="alert" className="alert">{error}</div>}
+      {!snapshot ? <p role="status">Cargando…</p> : <Table title={`${rows.length} equipos`} rows={rows} filename="equipos-custodio" fill columns={[
+        ['code', 'Código'], ['type', 'Tipo'], ['brand', 'Marca'], ['model', 'Modelo'], ['serial', 'Serie'], ['custodian', 'Custodio'], ['project', 'Proyecto'],
+      ]} />}
+    </div>;
+  }
+
   return <div className="hw-page">
     <div className="hw-toolbar">
       <h1>Hardware</h1>
@@ -282,7 +301,8 @@ export default function HardwarePage() {
           className={`segmented-btn ${tab === key ? 'active' : ''}`}
           onClick={() => { setTab(key); setFilter(null); }}>{label}</button>)}
       </nav>
-      {!snapshot.payrollUploaded && <div className="alert">
+      <span title={areaStatus(snapshot).tooltip} aria-label="Origen de las áreas" tabIndex={0}>?</span>
+      {!areaStatus(snapshot).available && <div className="alert">
         Actualiza la nómina para calcular áreas y cobertura de personas.
       </div>}
       {!licenseScope.accountsAvailable && tab === 'licencias' && <div className="hw-license-status" role="status">
