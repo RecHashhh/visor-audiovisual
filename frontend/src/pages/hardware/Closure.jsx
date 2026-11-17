@@ -101,21 +101,25 @@ export default function Closure({ canEdit }) {
   };
 
   return <section className="hw-closure">
-    <div className="hw-toolbar">
+    <header className="hw-closure-head">
+      <h2>Cierre de {monthLabel(month)}</h2>
       <label>Mes <input type="month" value={month} max={previousMonth(new Date(Date.now() + 31 * 864e5))}
         onChange={e => e.target.value && setMonth(e.target.value)} /></label>
+      <button type="button" className="btn btn-primary hw-closure-word" disabled={loading || !data || exporting} onClick={exportWord}>
+        {exporting ? 'Generando…' : 'Descargar Word'}</button>
+    </header>
+    <div className="hw-closure-tabs">
       <nav className="segmented hw-table-picker" role="tablist" aria-label="Secciones del cierre">
         {[...SECTIONS.map(([key, label]) => [key, label, model[key].length]), ['notes', 'Novedades', null]].map(([key, label, count]) =>
           <button key={key} type="button" role="tab" aria-selected={section === key}
             className={`segmented-btn ${section === key ? 'active' : ''} ${count === 0 ? 'hw-chip-empty' : ''}`}
-            onClick={() => setSection(key)}>{label}{count != null && <b>{loading ? '…' : count}</b>}</button>)}
+            onClick={() => setSection(key)}>{label}{count != null && !loading && <b>{count}</b>}</button>)}
       </nav>
       {HELP[section] && <Help text={HELP[section]} />}
-      <button type="button" className="btn hw-closure-word" disabled={loading || !data || exporting} onClick={exportWord}>
-        {exporting ? 'Generando…' : 'Descargar Word'}</button>
     </div>
     {error && <div className="alert" role="alert">{error}</div>}
-    {loading && <p role="status" className="hw-empty">Leyendo RIP_TIC de {monthLabel(month)}… (puede tardar unos segundos)</p>}
+    {loading && <div role="status" aria-label={`Leyendo RIP_TIC de ${monthLabel(month)}`} className="hw-closure-skeleton">
+      {[0, 1, 2, 3, 4].map(i => <span key={i} />)}<small>Leyendo RIP_TIC… puede tardar unos segundos</small></div>}
     {!loading && data && ['purchases', 'reassignments', 'disposals'].includes(section) &&
       <Table key={`${section}-${month}`} title={`${monthLabel(month)}`} rows={model[section]} filename={`cierre-${section}-${month}`}
         columns={COLUMNS[section]} fill />}

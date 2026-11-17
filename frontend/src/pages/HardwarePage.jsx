@@ -302,7 +302,6 @@ export default function HardwarePage() {
           className={`segmented-btn ${tab === key ? 'active' : ''}`}
           onClick={() => { setTab(key); setFilter(null); }}>{label}</button>)}
       </nav>
-      <span title={areaStatus(snapshot).tooltip} aria-label="Origen de las áreas" tabIndex={0}>?</span>
       {!areaStatus(snapshot).available && <div className="alert">
         Actualiza la nómina para calcular áreas y cobertura de personas.
       </div>}
