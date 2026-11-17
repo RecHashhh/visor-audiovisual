@@ -116,6 +116,11 @@ export const api = {
     method: 'POST', body: JSON.stringify({ views }),
   }),
   refreshHardware: () => apiFetch('/api/hardware/refresh', { method: 'POST' }),
+  // Cierre mensual para Auditoría: RIP_TIC vía Mesa + lo que TI completa (reparaciones, novedades).
+  getHardwareClosure: month => apiFetch(`/api/hardware/closure?month=${encodeURIComponent(month)}`),
+  saveHardwareClosure: (month, patch) => apiFetch(`/api/hardware/closure?month=${encodeURIComponent(month)}`, {
+    method: 'POST', body: JSON.stringify(patch),
+  }),
   uploadHardwarePayroll: file => apiFetch('/api/hardware/nomina', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file }),
   // Etiquetas de clasificación de Obra (sin caché de cliente).
   getTags: () => apiFetch('/api/tags'),

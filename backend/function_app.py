@@ -4679,6 +4679,35 @@ def hardware_refresh(req: func.HttpRequest) -> func.HttpResponse:
         return err("No se pudo guardar la foto de Hardware", 500)
 
 
+@app.route(route="hardware/closure", methods=["GET", "POST", "OPTIONS"])
+def hardware_closure(req: func.HttpRequest) -> func.HttpResponse:
+    """Cierre mensual para Auditoría: RIP_TIC (vía Mesa) + lo que TI completa a mano."""
+    if req.method == "OPTIONS":
+        return options_ok()
+    _, error = require_perms(req, cap="hardware")
+    if error is not None:
+        return error
+    from hardware_closure import apply_patch, month_view, normalize, valid_month
+    path = f"{CONFIG_PREFIX.strip('/')}/hardware/closure.json"
+    try:
+        if req.method == "POST":
+            editor = (get_caller(req) or {}).get("email") or ""
+            patch = req.get_json()
+            doc = update_json_blob(path, lambda previous: apply_patch(previous, patch, editor))
+            return ok(month_view(doc, valid_month(req.params.get("month", ""))))
+        month = valid_month(req.params.get("month", ""))
+        from hardware_service import fetch_closure
+        data = fetch_closure(os.environ.get("MESA_URL", ""), os.environ.get("HARDWARE_SNAPSHOT_TOKEN", ""), month)
+        return ok({**data, "manual": month_view(normalize(load_json_blob(path)), month)})
+    except ValueError as exc:
+        return err(str(exc), 400)
+    except RuntimeError as exc:
+        return err(str(exc), 409)
+    except Exception:
+        logging.exception("hardware_closure")
+        return err("No se pudo leer el cierre desde la Mesa; intenta de nuevo en unos minutos", 502)
+
+
 @app.route(route="hardware/nomina", methods=["POST", "OPTIONS"])
 def hardware_nomina(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":

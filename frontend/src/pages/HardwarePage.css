@@ -245,3 +245,18 @@
 .hw-colfilter-list .hw-colfilter-all { grid-template-columns: auto 1fr; font-weight: 600; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
 .hw-colfilter-list p { margin: 4px 8px; color: var(--text-dim); }
 .hw-colfilter-actions { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* Cierre mensual (Auditoría): tabla editable de reparaciones y novedades. */
+.hw-closure .hw-table-picker.segmented { margin: 0; }
+.hw-closure-word { margin-left: auto; }
+.hw-closure-scroll { overflow-x: auto; }
+.hw-closure-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.hw-closure-table td { vertical-align: middle; }
+.hw-closure-table input { width: 100%; min-width: 140px; padding: 4px 6px; font-size: 12px; }
+.hw-closure-table input.hw-closure-short { min-width: 80px; width: 90px; }
+.hw-closure-state { min-width: 130px; }
+.hw-closure-tag { margin-left: 6px; padding: 0 5px; border-radius: 4px; background: var(--bg2); color: var(--text-dim); font-size: 10px; }
+.hw-closure-extra { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px; margin-top: 10px; font-size: 12px; }
+.hw-closure-extra label { display: flex; flex-direction: column; gap: 3px; color: var(--text-dim); }
+.hw-closure-notes { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.hw-closure-notes textarea { width: 100%; max-width: 900px; padding: 8px; border: 1px solid var(--border); border-radius: 5px; background: var(--bg); color: var(--text); font: inherit; font-size: 13px; }

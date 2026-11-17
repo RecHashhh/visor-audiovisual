@@ -11,6 +11,7 @@ import { scopeLicenses } from './hardware/licenseScope';
 import { typeLabel } from './hardware/v3Metrics';
 import LicensePrices from './hardware/LicensePrices.jsx';
 import LicenseInventory from './hardware/LicenseInventory.jsx';
+import Closure from './hardware/Closure.jsx';
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../utils/api';
 import Help from '../components/Help';
@@ -33,7 +34,7 @@ const TABS = [
   ['resumen', 'Resumen'], ['estado', 'Estado de equipos'], ['compras', 'Compras'], ['bajas', 'Bajas y vida útil'],
   ['seguros', 'Seguros y garantías'],
   ['personas', 'Personas'], ['licencias', 'Licencias'], ['proyectos', 'Proyectos'],
-  ['calidad', 'Calidad de datos'], ['explorar', 'Explorar'],
+  ['calidad', 'Calidad de datos'], ['explorar', 'Explorar'], ['cierre', 'Cierre mensual'],
 ];
 const STORAGE_KEY = 'ripcon-hardware-period-v3';
 
@@ -309,7 +310,7 @@ export default function HardwarePage() {
         Inventario disponible. Actualiza para consultar quién tiene cada licencia y su último ingreso.
         <button type="button" className="hw-card-link" disabled={busy} onClick={() => update()}>Actualizar datos</button>
       </div>}
-      {!['resumen', 'explorar'].includes(tab) && <div className="hw-toolbar hw-view-controls">
+      {!['resumen', 'explorar', 'cierre'].includes(tab) && <div className="hw-toolbar hw-view-controls">
         <div className="segmented" aria-label="Vista de sección">
           {[['charts', 'Gráficos'], ['tables', 'Tablas']].map(([key, label]) => (
             <button key={key} type="button" role="tab" aria-selected={viewMode === key}
@@ -358,7 +359,8 @@ export default function HardwarePage() {
           </span>
         ))}
       </div>}
-      {tab !== 'explorar' && (tab === 'resumen' || viewMode === 'charts') && <>
+      {tab === 'cierre' && <Closure canEdit={hasCap(me, 'hardware')} />}
+      {!['explorar', 'cierre'].includes(tab) && (tab === 'resumen' || viewMode === 'charts') && <>
         <SectionKpis tab={tab} canRecover={canRecover} data={data} period={period} snapshot={snapshot} model={model} onOpen={openKpi} />
         {tab === 'licencias' && <LicenseInventory scope={licenseScope} />}
         <div className={`hw-cards${fitCards ? ' hw-cards-fit' : ''}`} ref={cardsRef}
@@ -369,7 +371,7 @@ export default function HardwarePage() {
           ))}
         </div>
       </>}
-      {tab !== 'resumen' && tab !== 'explorar' && viewMode === 'tables' && <>
+      {!['resumen', 'explorar', 'cierre'].includes(tab) && viewMode === 'tables' && <>
         {sectionTables.length > 1 && <nav className="segmented hw-table-picker" role="tablist" aria-label="Tablas de la sección">
           {sectionTables.map(table => <button key={table.id} type="button" role="tab"
             aria-selected={table.id === activeTable?.id}

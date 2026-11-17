@@ -18,6 +18,19 @@ def fetch_mesa(url, token):
     return data
 
 
+def fetch_closure(url, token, month):
+    """Cierre mensual de la Mesa (RIP_TIC); la consulta recorre todo el historial de custodias."""
+    if not url or not token:
+        raise ValueError('Faltan MESA_URL o HARDWARE_SNAPSHOT_TOKEN')
+    response = requests.get(url.rstrip('/') + '/api/integrations/hardware/closure', params={'month': month},
+                            headers={'X-Hardware-Token': token}, timeout=(5, 100))
+    response.raise_for_status()
+    data = response.json()
+    if not isinstance(data, dict) or not all(isinstance(data.get(k), list) for k in ('purchases', 'repairs', 'reassignments', 'disposals')):
+        raise ValueError('Respuesta de Mesa inválida')
+    return data
+
+
 def fetch_graph(token_provider):
     token = token_provider()
     deadline = time.monotonic() + 65
