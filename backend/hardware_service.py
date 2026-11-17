@@ -31,6 +31,38 @@ def fetch_closure(url, token, month):
     return data
 
 
+class MesaRejected(Exception):
+    """La Mesa rechazó el cambio (400/404/409) con un mensaje para mostrar."""
+    def __init__(self, message, status):
+        super().__init__(message)
+        self.status = status
+
+
+def _post_closure(url, token, path, params, body):
+    if not url or not token:
+        raise ValueError('Faltan MESA_URL o HARDWARE_SNAPSHOT_TOKEN')
+    response = requests.post(url.rstrip('/') + '/api/integrations/hardware/closure' + path, params=params, json=body,
+                             headers={'X-Hardware-Token': token}, timeout=(5, 60))
+    if response.status_code in (400, 404, 409):
+        try:
+            message = response.json().get('message')
+        except ValueError:
+            message = None
+        raise MesaRejected(message if isinstance(message, str) else 'Cambio rechazado', response.status_code)
+    response.raise_for_status()
+    return response.json()
+
+
+def save_closure(url, token, month, patch, editor):
+    """Cambio de TI en el cierre (se guarda en la base de la Mesa); devuelve el cierre actualizado."""
+    return _post_closure(url, token, '', {'month': month}, {'patch': patch, 'editor': editor})
+
+
+def import_closure(url, token, manual, editor):
+    """Traspaso único de lo guardado en el archivo del Hub antes de la base."""
+    return _post_closure(url, token, '/import', None, {'manual': manual, 'editor': editor})
+
+
 def fetch_graph(token_provider):
     token = token_provider()
     deadline = time.monotonic() + 65

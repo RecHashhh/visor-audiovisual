@@ -83,9 +83,15 @@ export default function Closure({ canEdit }) {
   }, [month]);
 
   const model = useMemo(() => closureRows(data, manual), [data, manual]);
+  const closed = data?.status === 'Cerrado';
+  const editable = canEdit && !closed;
   const save = async patch => {
     setSaving(true); setError('');
-    try { setManual(await api.saveHardwareClosure(month, patch)); }
+    try {
+      const result = await api.saveHardwareClosure(month, patch);
+      setData(result); setManual(result.manual || {});
+      if (patch.notes) setNotes(result.manual?.notes || '');
+    }
     catch (failure) { setError(failure.message); }
     finally { setSaving(false); }
   };
@@ -105,6 +111,12 @@ export default function Closure({ canEdit }) {
       <h2>Cierre de {monthLabel(month)}</h2>
       <label>Mes <input type="month" value={month} max={previousMonth(new Date(Date.now() + 31 * 864e5))}
         onChange={e => e.target.value && setMonth(e.target.value)} /></label>
+      {data && <span className={`hw-closure-status ${closed ? 'is-closed' : ''}`}
+        title={closed ? `Cerrado por ${data.closedBy || '—'} el ${shortDate(data.closedAt)}` : 'Se actualiza con RIP_TIC hasta cerrarlo'}>
+        {closed ? 'Cerrado' : 'Borrador'}</span>}
+      {canEdit && data && <button type="button" className="btn btn-ghost" disabled={saving}
+        onClick={() => save(closed ? { reopen: true } : { close: true })}>{closed ? 'Reabrir' : 'Cerrar mes'}</button>}
+      <Help text="El cierre queda guardado en la base de la Mesa. «Cerrar mes» lo congela: el informe ya no cambia aunque cambie RIP_TIC. «Reabrir» permite corregirlo." />
       <button type="button" className="btn btn-primary hw-closure-word" disabled={loading || !data || exporting} onClick={exportWord}>
         {exporting ? 'Generando…' : 'Descargar Word'}</button>
     </header>
@@ -118,6 +130,7 @@ export default function Closure({ canEdit }) {
       {HELP[section] && <Help text={HELP[section]} />}
     </div>
     {error && <div className="alert" role="alert">{error}</div>}
+    {data?.stale && <div className="alert" role="status">RIP_TIC no respondió: se muestra lo guardado el {shortDate(data.generatedAt)}.</div>}
     {loading && <div role="status" aria-label={`Leyendo RIP_TIC de ${monthLabel(month)}`} className="hw-closure-skeleton">
       {[0, 1, 2, 3, 4].map(i => <span key={i} />)}<small>Leyendo RIP_TIC… puede tardar unos segundos</small></div>}
     {!loading && data && ['purchases', 'reassignments', 'disposals'].includes(section) &&
@@ -129,20 +142,20 @@ export default function Closure({ canEdit }) {
           <thead><tr>{['Código', 'Custodio', 'Proveedor', 'Envío', 'Retorno', 'Motivo', 'Tiempo est.', 'Estado', 'Costo', 'Último proyecto', '']
             .map(head => <th key={head}>{head}</th>)}</tr></thead>
           <tbody>
-            {model.repairs.map(row => <RepairRow key={row.key} row={row} saving={saving || !canEdit} onSave={saveRepair}
+            {model.repairs.map(row => <RepairRow key={row.key} row={row} saving={saving || !editable} onSave={saveRepair}
               onRemove={target => save({ removeExtra: target.id })} />)}
             {!model.repairs.length && <tr><td colSpan={11} className="hw-empty">Sin equipos con proveedor en {monthLabel(month)}.</td></tr>}
           </tbody>
         </table>
       </div>
-      {canEdit && (adding ? <ExtraRepair saving={saving} onCancel={() => setAdding(false)}
+      {editable && (adding ? <ExtraRepair saving={saving} onCancel={() => setAdding(false)}
         onSave={async row => { await save({ extra: { ...row, cost: null } }); setAdding(false); }} /> :
         <button type="button" className="hw-card-link" onClick={() => setAdding(true)}>+ Reparación no registrada en RIP_TIC</button>)}
     </>}
     {!loading && data && section === 'notes' && <div className="hw-closure-notes">
-      <textarea aria-label="Novedades del mes" rows={6} maxLength={4000} value={notes} disabled={!canEdit || saving}
+      <textarea aria-label="Novedades del mes" rows={6} maxLength={4000} value={notes} disabled={!editable || saving}
         placeholder={`No existen novedades importantes en el mes de ${monthLabel(month)}`} onChange={e => setNotes(e.target.value)} />
-      {canEdit && <button type="button" className="btn" disabled={saving || notes === (manual.notes || '')}
+      {editable && <button type="button" className="btn" disabled={saving || notes === (manual.notes || '')}
         onClick={() => save({ notes: { month, text: notes } })}>{saving ? 'Guardando…' : 'Guardar'}</button>}
     </div>}
   </section>;

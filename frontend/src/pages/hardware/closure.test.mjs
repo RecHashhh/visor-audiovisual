@@ -50,7 +50,7 @@ test('Word: secciones, textos vacíos, escape XML y paquete válido', () => {
   assert.match(xml, /No existen novedades importantes en el mes de septiembre 2026/);
   assert.match(xml, /Daño &lt;placa&gt; &amp; &quot;SSD&quot;/);
   assert.ok(!xml.includes('<placa>'));
-  for (const text of ['LT00263', '3/9/2026', 'LAPTOP REPAIR', '103,50', 'Martín Lovato', 'USUARIO PREVIO']) assert.ok(xml.includes(text), text);
+  for (const text of ['LT00263', '3/9/2026', 'LAPTOP REPAIR', '103,50', 'Martín Lovato', 'Usuario previo', '1. Compras del mes', '1/9/2026 – 30/9/2026']) assert.ok(xml.includes(text), text);
   assert.equal(xmlText('a\u0001b'), 'ab', 'sin caracteres de control inválidos en XML');
   const withNotes = documentXml({ ...model, notes: 'Línea 1\nLínea 2' }, { month: '2026-09' });
   assert.match(withNotes, /Línea 1.*Línea 2/s);
@@ -62,7 +62,7 @@ test('Word: secciones, textos vacíos, escape XML y paquete válido', () => {
   const files = unzipSync(zipSync(closureFiles(model, { month: '2026-09' }, png)));
   for (const name of ['[Content_Types].xml', '_rels/.rels', 'word/document.xml', 'word/styles.xml', 'word/header1.xml', 'word/_rels/header1.xml.rels', 'word/media/logo.png'])
     assert.ok(files[name], name);
-  assert.match(strFromU8(files['word/header1.xml']), /cy="611250"/, 'logo con su proporción');
+  assert.match(strFromU8(files['word/header1.xml']), /cy="375000"/, 'logo con su proporción');
   assert.ok(!unzipSync(zipSync(closureFiles(model, { month: '2026-09' })))['word/media/logo.png'], 'sin logo no se referencia imagen');
 });
 

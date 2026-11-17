@@ -4681,28 +4681,33 @@ def hardware_refresh(req: func.HttpRequest) -> func.HttpResponse:
 
 @app.route(route="hardware/closure", methods=["GET", "POST", "OPTIONS"])
 def hardware_closure(req: func.HttpRequest) -> func.HttpResponse:
-    """Cierre mensual para Auditoría: RIP_TIC (vía Mesa) + lo que TI completa a mano."""
+    """Cierre mensual para Auditoría: todo se guarda en la base de la Mesa (copia de RIP_TIC + lo que completa TI)."""
     if req.method == "OPTIONS":
         return options_ok()
     _, error = require_perms(req, cap="hardware")
     if error is not None:
         return error
-    from hardware_closure import apply_patch, month_view, normalize, valid_month
-    path = f"{CONFIG_PREFIX.strip('/')}/hardware/closure.json"
+    from hardware_closure import pending_import, valid_month
+    from hardware_service import MesaRejected, fetch_closure, import_closure, save_closure
+    url, token = os.environ.get("MESA_URL", ""), os.environ.get("HARDWARE_SNAPSHOT_TOKEN", "")
+    editor = (get_caller(req) or {}).get("email") or ""
     try:
-        if req.method == "POST":
-            editor = (get_caller(req) or {}).get("email") or ""
-            patch = req.get_json()
-            doc = update_json_blob(path, lambda previous: apply_patch(previous, patch, editor))
-            return ok(month_view(doc, valid_month(req.params.get("month", ""))))
         month = valid_month(req.params.get("month", ""))
-        from hardware_service import fetch_closure
-        data = fetch_closure(os.environ.get("MESA_URL", ""), os.environ.get("HARDWARE_SNAPSHOT_TOKEN", ""), month)
-        return ok({**data, "manual": month_view(normalize(load_json_blob(path)), month)})
+        if req.method == "POST":
+            return ok(save_closure(url, token, month, req.get_json(), editor))
+        data = fetch_closure(url, token, month)
+        # Una sola vez: lo que TI guardó en el archivo del Hub pasa a la base de la Mesa; el archivo queda de respaldo.
+        path = f"{CONFIG_PREFIX.strip('/')}/hardware/closure.json"
+        manual = pending_import(load_json_blob(path))
+        if manual:
+            import_closure(url, token, manual, editor)
+            update_json_blob(path, lambda previous: {**(previous or {}), "importedAt": datetime.now(timezone.utc).isoformat(timespec="seconds")})
+            data = fetch_closure(url, token, month)
+        return ok(data)
+    except MesaRejected as exc:
+        return err(str(exc), exc.status)
     except ValueError as exc:
         return err(str(exc), 400)
-    except RuntimeError as exc:
-        return err(str(exc), 409)
     except Exception:
         logging.exception("hardware_closure")
         return err("No se pudo leer el cierre desde la Mesa; intenta de nuevo en unos minutos", 502)
