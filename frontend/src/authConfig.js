@@ -53,3 +53,11 @@ export function logoutLocal() {
     .catch(() => { window.location.assign('/') })
 }
 
+
+// Bypass de login SOLO en desarrollo (import.meta.env.DEV es false en el build
+// de producción): VITE_AUTH_BYPASS=1 o localStorage 'ripcon-dev-preview' = '1'.
+// El backend lo acepta solo con AUTH_DEBUG_USER en el host local de Functions.
+export const devPreview = import.meta.env.DEV && (
+  import.meta.env.VITE_AUTH_BYPASS === '1'
+  || (() => { try { return localStorage.getItem('ripcon-dev-preview') === '1' } catch { return false } })()
+)

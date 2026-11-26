@@ -3,6 +3,7 @@ import { useIsAuthenticated, useMsal } from '@azure/msal-react'
 import { InteractionStatus } from '@azure/msal-browser'
 import { lazy, Suspense, useEffect, Fragment } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import { devPreview } from './authConfig'
 import LoginPage      from './pages/LoginPage'
 import AppShell       from './components/AppShell'
 import { SectionsProvider, useSections } from './utils/sections'
@@ -42,8 +43,7 @@ function RequireAuth({ children }) {
 
   // Bypass SOLO en desarrollo (import.meta.env.DEV se elimina en el build de
   // producción): permite capturar pantallas con Playwright sin login MSAL.
-  if (import.meta.env.DEV && typeof window !== 'undefined'
-      && window.localStorage.getItem('ripcon-dev-preview') === '1') {
+  if (devPreview) {
     return children
   }
 

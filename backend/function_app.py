@@ -42,6 +42,17 @@ STATUS_UPLOAD_WINDOW_HOURS = int(os.environ.get("STATUS_UPLOAD_WINDOW_HOURS", "4
 INDEX_PREFIX = os.environ.get("INDEX_PREFIX", "_index")
 INDEX_ENABLED = os.environ.get("INDEX_ENABLED", "true").strip().lower() in ("1", "true", "yes", "on")
 INDEX_REFRESH_CRON = os.environ.get("INDEX_REFRESH_CRON", "0 0 4 * * *")
+MIA_API_BASE_URL = os.environ.get("MIA_API_BASE_URL", "").rstrip("/")
+MIA_STAGE_CONTAINER = os.environ.get("MIA_STAGE_CONTAINER", "audiovisual-staging")
+# App-only token for MIA through APIM: the hub's own registration
+# (visor-audiovisual) holds the Media.Jobs.Write role on PRY-BE-MIA. Separate
+# from AZURE_CLIENT_ID/SECRET (synapseapi, Graph only).
+MIA_API_SCOPE = os.environ.get("MIA_API_SCOPE", "").strip()
+MIA_CLIENT_ID = os.environ.get("MIA_CLIENT_ID", "").strip()
+MIA_CLIENT_SECRET = os.environ.get("MIA_CLIENT_SECRET", "").strip()
+MIA_ASYNC_UPLOADS_ENABLED = os.environ.get("MIA_ASYNC_UPLOADS_ENABLED", "").strip().lower() in (
+    "1", "true", "yes", "on"
+)
 CONFIG_PREFIX = os.environ.get("CONFIG_PREFIX", "_config")
 # Biblioteca de contenido por sección (marcas, documentos, videos...), separada
 # de las carpetas de proyectos: _media/<seccion>/<carpeta>/<archivos>
@@ -281,21 +292,72 @@ def make_sas_url(blob_path: str, expiry_minutes: int = 60) -> str:
     )
     return f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER}/{blob_path}?{sas}"
 
-def make_sas_url_write(blob_path: str, expiry_minutes: int = 360) -> str:
+def make_sas_url_write(
+    blob_path: str,
+    expiry_minutes: int = 360,
+    container_name: Optional[str] = None,
+) -> str:
     """SAS de escritura para subida directa navegador→blob (Put Blob / Put Block).
     Solo permite escribir/crear ese blob exacto; no leer ni listar."""
     if not ACCOUNT_KEY:
         raise ValueError("AZURE_STORAGE_KEY no configurado en Application Settings")
     expiry = datetime.now(timezone.utc) + timedelta(minutes=expiry_minutes)
+    target_container = container_name or CONTAINER
     sas = generate_blob_sas(
         account_name=ACCOUNT_NAME,
-        container_name=CONTAINER,
+        container_name=target_container,
         blob_name=blob_path,
         account_key=ACCOUNT_KEY,
         permission=BlobSasPermissions(write=True, create=True),
         expiry=expiry,
     )
-    return f"https://{ACCOUNT_NAME}.blob.core.windows.net/{CONTAINER}/{blob_path}?{sas}"
+    return f"https://{ACCOUNT_NAME}.blob.core.windows.net/{target_container}/{blob_path}?{sas}"
+
+
+def ensure_blob_container(container_name: str) -> None:
+    """Create a staging container once; production containers remain unchanged."""
+    try:
+        get_blob_service().get_container_client(container_name).create_container()
+    except ResourceExistsError:
+        pass
+
+
+def _stage_container():
+    return get_blob_service().get_container_client(MIA_STAGE_CONTAINER)
+
+
+def _plan_blob(batch_id: str) -> str:
+    return f"plans/{batch_id}.json"
+
+
+def mia_async_enabled() -> bool:
+    return MIA_ASYNC_UPLOADS_ENABLED and all(
+        (MIA_API_BASE_URL, MIA_API_SCOPE, MIA_CLIENT_ID, MIA_CLIENT_SECRET)
+    )
+
+
+_mia_tokens = uploader.TokenPool(
+    scopes=[MIA_API_SCOPE], client_id=MIA_CLIENT_ID, client_secret=MIA_CLIENT_SECRET
+)
+
+
+def create_mia_upload_job(body: Dict[str, Any]) -> Dict[str, Any]:
+    """Create a durable MIA transfer job after staging uploads finish. Calls MIA
+    through APIM as this app (not with the user's token)."""
+    response = requests.post(
+        f"{MIA_API_BASE_URL}/files/jobs",
+        json=body,
+        headers={"Authorization": f"Bearer {_mia_tokens.get()}", "Content-Type": "application/json"},
+        timeout=30,
+    )
+    if not response.ok:
+        detail = response.text[:500]
+        raise RuntimeError(f"MIA rechazó el job ({response.status_code}): {detail}")
+    payload = response.json()
+    data = payload.get("data") or {}
+    if not data.get("job_id"):
+        raise RuntimeError("MIA respondió sin job_id")
+    return data
 
 def derive_project_status(file_count: int, weeks_count: int, last_modified: Optional[datetime]) -> Dict[str, str]:
     if file_count <= 0 or weeks_count <= 0:
@@ -815,9 +877,25 @@ def _caller_from_client_principal(req: func.HttpRequest) -> Optional[Dict[str, s
     name = str(principal.get("userDetails") or _first("name") or "").strip()
     return {"email": email, "name": name}
 
+# Debug local: AUTH_DEBUG_USER=<email> hace que el token "dev-preview-token" (que
+# solo envía el build de desarrollo de Vite) actúe como ese usuario. Solo con el
+# host local de Functions (AZURE_FUNCTIONS_ENVIRONMENT=Development, sin
+# WEBSITE_INSTANCE_ID): en Azure se ignora aunque la variable exista.
+AUTH_DEBUG_USER = (
+    os.environ.get("AUTH_DEBUG_USER", "").strip().lower()
+    if os.environ.get("AZURE_FUNCTIONS_ENVIRONMENT") == "Development"
+    and not os.environ.get("WEBSITE_INSTANCE_ID")
+    else ""
+)
+if AUTH_DEBUG_USER:
+    logging.warning("AUTH_DEBUG_USER activo: dev-preview-token = %s (solo local)", AUTH_DEBUG_USER)
+
+
 def get_caller(req: func.HttpRequest) -> Optional[Dict[str, str]]:
     """Extrae la identidad (email + nombre) del token Bearer. None si el token
     falta o no trae identidad de este tenant."""
+    if AUTH_DEBUG_USER and req.headers.get("X-Access-Token", "") == "dev-preview-token":
+        return {"email": AUTH_DEBUG_USER, "name": "Debug local"}
     client_principal_caller = _caller_from_client_principal(req)
     if client_principal_caller is not None:
         return client_principal_caller
@@ -3014,7 +3092,7 @@ def _sanitize_rel_segment(seg: str) -> str:
 def upload_local_plan(req: func.HttpRequest) -> func.HttpResponse:
     if req.method == "OPTIONS":
         return options_ok()
-    _, auth_err = require_perms(req, cap="upload")
+    perms, auth_err = require_perms(req, cap="upload")
     if auth_err:
         return auth_err
 
@@ -3045,6 +3123,10 @@ def upload_local_plan(req: func.HttpRequest) -> func.HttpResponse:
         carpeta = uploader._resolve_carpeta(project_code, project_name)
         base = f"{carpeta}/{subfolder}" if subfolder else carpeta
         svc = get_blob_service()
+        async_upload = mia_async_enabled()
+        batch_id = uuid.uuid4().hex if async_upload else None
+        if async_upload:
+            ensure_blob_container(MIA_STAGE_CONTAINER)
         blob_index = uploader.construir_blob_index(svc, prefix=f"{base}/")
 
         def fecha_de(entry: Dict[str, Any]) -> datetime:
@@ -3113,17 +3195,42 @@ def upload_local_plan(req: func.HttpRequest) -> func.HttpResponse:
                     "sasUrl": None,
                 })
             else:
+                staging_blob = (
+                    f"staging/{batch_id}/{e['idx']:05d}-{e['name']}"
+                    if async_upload else None
+                )
                 planned.append({
                     "idx": e["idx"], "name": e["name"], "relativePath": e["relativePath"],
                     "status": "nuevo", "blobPath": blob_path, "finalName": nombre_final,
                     "contentType": uploader.content_type_para(nombre_final),
-                    "sasUrl": make_sas_url_write(blob_path, expiry_minutes=360),
+                    "sasUrl": make_sas_url_write(
+                        staging_blob or blob_path,
+                        expiry_minutes=360,
+                        container_name=MIA_STAGE_CONTAINER if async_upload else None,
+                    ),
+                    "stagingBlobPath": staging_blob,
+                    "asyncUpload": async_upload,
                 })
 
         nuevos = sum(1 for p in planned if p["status"] == "nuevo")
+        if async_upload:
+            # finalize builds the MIA job from this copy only; the browser just
+            # names the batch, so it can't choose destinations.
+            _stage_container().upload_blob(_plan_blob(batch_id), json.dumps({
+                "owner": perms.get("email", ""),
+                "base": base,
+                "files": [
+                    {"source_blob": p["stagingBlobPath"], "destination_blob": p["blobPath"],
+                     "content_type": p["contentType"]}
+                    for p in planned if p["status"] == "nuevo"
+                ],
+            }), overwrite=True)
         return ok({
             "carpeta": carpeta,
+            "base": base,
             "keepNames": keep_names,
+            "asyncUpload": async_upload,
+            "batchId": batch_id,
             "total": len(planned),
             "nuevos": nuevos,
             "existentes": sum(1 for p in planned if p["status"] == "existe"),
@@ -3133,6 +3240,63 @@ def upload_local_plan(req: func.HttpRequest) -> func.HttpResponse:
     except Exception as exc:
         logging.error("upload_local_plan: %s", exc)
         return err(str(exc), 500)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# POST /api/upload/local/finalize — crea el job MIA tras la subida a staging
+# ══════════════════════════════════════════════════════════════════════════════
+@app.route(route="upload/local/finalize", methods=["POST", "OPTIONS"])
+def upload_local_finalize(req: func.HttpRequest) -> func.HttpResponse:
+    if req.method == "OPTIONS":
+        return options_ok()
+    perms, auth_err = require_perms(req, cap="upload")
+    if auth_err:
+        return auth_err
+    if not mia_async_enabled():
+        return err("Las subidas asíncronas con MIA no están habilitadas", 409)
+
+    try:
+        body = req.get_json()
+    except Exception:
+        return err("Cuerpo JSON inválido", 400)
+
+    batch_id = str(body.get("batchId") or "").strip()
+    if len(batch_id) != 32 or any(c not in "0123456789abcdef" for c in batch_id):
+        return err("batchId inválido", 400)
+
+    try:
+        stage = _stage_container()
+        try:
+            saved = json.loads(stage.download_blob(_plan_blob(batch_id)).readall())
+        except ResourceNotFoundError:
+            return err("Tanda no encontrada o ya finalizada", 404)
+        if saved.get("owner") != perms.get("email", ""):
+            return err("La tanda pertenece a otro usuario", 403)
+
+        sizes = {b.name: b.size for b in stage.list_blobs(name_starts_with=f"staging/{batch_id}/")}
+        files = [dict(f, size_bytes=sizes[f["source_blob"]]) for f in saved["files"] if f["source_blob"] in sizes]
+        if not files:
+            return err("No hay archivos subidos en esta tanda", 400)
+
+        job = create_mia_upload_job({
+            "source": {"container_name": MIA_STAGE_CONTAINER, "prefix": f"staging/{batch_id}"},
+            "destination": {"container_name": CONTAINER, "prefix": saved["base"]},
+            "files": files,
+            "delete_source_on_success": True,
+        })
+        stage.delete_blob(_plan_blob(batch_id))
+        return ok({
+            "ok": True,
+            "jobId": job["job_id"],
+            "status": job.get("status", "queued"),
+            "totalFiles": job.get("total_files", len(files)),
+        }, 202)
+    except (ValueError, RuntimeError) as exc:
+        logging.error("upload_local_finalize: %s", exc)
+        return err(str(exc), 502)
+    except Exception as exc:
+        logging.error("upload_local_finalize unexpected: %s", exc)
+        return err("No se pudo crear el job asíncrono", 500)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

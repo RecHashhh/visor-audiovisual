@@ -118,7 +118,17 @@ CONTAINER_NAME = os.environ.get("BLOB_CONTAINER", "audiovisual")
 class TokenPool:
     """Cache de token Graph thread-safe. Evita re-autenticar en cada worker."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        scopes: Optional[List[str]] = None,
+        client_id: Optional[str] = None,
+        client_secret: Optional[str] = None,
+    ) -> None:
+        self._scopes = scopes or GRAPH_SCOPE
+        # Graph credentials only when none are passed; an empty value stays empty
+        # so a missing MIA_CLIENT_ID never falls back to the Graph app.
+        self._client_id = GRAPH_CLIENT_ID if client_id is None else client_id
+        self._client_secret = GRAPH_CLIENT_SECRET if client_secret is None else client_secret
         self._token: Optional[str] = None
         self._expira: float = 0.0
         self._lock = threading.Lock()
@@ -126,15 +136,15 @@ class TokenPool:
 
     def _build_app(self) -> msal.ConfidentialClientApplication:
         if self._app is None:
-            if not (GRAPH_TENANT_ID and GRAPH_CLIENT_ID and GRAPH_CLIENT_SECRET):
+            if not (GRAPH_TENANT_ID and self._client_id and self._client_secret):
                 raise ValueError(
-                    "Faltan credenciales Graph: configura AZURE_TENANT_ID, "
-                    "AZURE_CLIENT_ID y AZURE_CLIENT_SECRET en Application Settings."
+                    "Faltan credenciales: configura AZURE_TENANT_ID y el client id/secret "
+                    f"para {self._scopes} en Application Settings."
                 )
             self._app = msal.ConfidentialClientApplication(
-                GRAPH_CLIENT_ID,
+                self._client_id,
                 authority=f"https://login.microsoftonline.com/{GRAPH_TENANT_ID}",
-                client_credential=GRAPH_CLIENT_SECRET,
+                client_credential=self._client_secret,
             )
         return self._app
 
@@ -143,7 +153,7 @@ class TokenPool:
             if (not force_refresh) and self._token and time.monotonic() < self._expira:
                 return self._token
             app = self._build_app()
-            result = app.acquire_token_for_client(scopes=GRAPH_SCOPE)
+            result = app.acquire_token_for_client(scopes=self._scopes)
             if "access_token" not in result:
                 raise RuntimeError(
                     f"Error autenticación Graph: {result.get('error_description')}"
@@ -151,7 +161,7 @@ class TokenPool:
             self._token = result["access_token"]
             expires_in = int(result.get("expires_in", TOKEN_TTL_SECONDS))
             self._expira = time.monotonic() + max(60, min(TOKEN_TTL_SECONDS, expires_in - 120))
-            log.info("Token Graph renovado.")
+            log.info("Token renovado para %s.", self._scopes)
             return self._token
 
 

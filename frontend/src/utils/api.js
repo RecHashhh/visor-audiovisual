@@ -1,7 +1,7 @@
 // src/utils/api.js
 // Fetches an MSAL access token then calls the Azure Functions backend.
 
-import { msalInstance, apiRequest } from '../authConfig'
+import { msalInstance, apiRequest, devPreview } from '../authConfig'
 
 // Simple client-side cache with TTL (45 seconds, same as backend)
 const _cache = {}
@@ -37,7 +37,7 @@ async function getToken() {
   // Bypass SOLO en desarrollo para las capturas/preview (dev-preview): sin cuenta
   // MSAL devuelve un token ficticio y las APIs quedan mockeadas por Playwright.
   // En el build de producción import.meta.env.DEV es false, así que no aplica.
-  if (import.meta.env.DEV && typeof localStorage !== 'undefined' && localStorage.getItem('ripcon-dev-preview') === '1') {
+  if (devPreview) {
     return 'dev-preview-token'
   }
   const account = msalInstance.getActiveAccount()
@@ -177,6 +177,7 @@ export const api = {
   resolveShare:     (token)      => apiFetch(`/api/share/${token}`),
   postUpload:       (payload)    => apiFetch('/api/upload', { method: 'POST', body: JSON.stringify(payload) }),
   postUploadLocalPlan: (payload) => apiFetch('/api/upload/local/plan', { method: 'POST', body: JSON.stringify(payload) }),
+  postUploadLocalFinalize: (payload) => apiFetch('/api/upload/local/finalize', { method: 'POST', body: JSON.stringify(payload) }),
   postRemotePlan:   (payload)    => apiFetch('/api/upload/remote/plan', { method: 'POST', body: JSON.stringify(payload) }),
   postRemoteBatch:  (payload)    => apiFetch('/api/upload/remote/batch', { method: 'POST', body: JSON.stringify(payload) }),
   // Biblioteca (media) desde SharePoint/OneDrive: conserva nombres y estructura.
