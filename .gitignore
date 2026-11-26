@@ -12,3 +12,4 @@ local.settings.json
 frontend/.shots/
 .impeccable/
 a.py
+.venv/

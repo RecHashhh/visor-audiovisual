@@ -177,6 +177,7 @@ export const api = {
   resolveShare:     (token)      => apiFetch(`/api/share/${token}`),
   postUpload:       (payload)    => apiFetch('/api/upload', { method: 'POST', body: JSON.stringify(payload) }),
   postUploadLocalPlan: (payload) => apiFetch('/api/upload/local/plan', { method: 'POST', body: JSON.stringify(payload) }),
+  postUploadLocalFinalize: (payload) => apiFetch('/api/upload/local/finalize', { method: 'POST', body: JSON.stringify(payload) }),
   postRemotePlan:   (payload)    => apiFetch('/api/upload/remote/plan', { method: 'POST', body: JSON.stringify(payload) }),
   postRemoteBatch:  (payload)    => apiFetch('/api/upload/remote/batch', { method: 'POST', body: JSON.stringify(payload) }),
   // Biblioteca (media) desde SharePoint/OneDrive: conserva nombres y estructura.

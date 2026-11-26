@@ -254,6 +254,7 @@ function ProjectUpload() {
 function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, setKeepNames, refreshIndex, ready }) {
   const [files, setFiles] = useState([])
   const [rows, setRows] = useState([])
+  const [planMeta, setPlanMeta] = useState(null)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [stats, setStats] = useState(null)   // { doneBytes, totalBytes, ok, fail, total, speed, etaSec, done }
@@ -278,9 +279,12 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
         projectCode, projectName, prefijo, keepNames, subfolder,
         files: files.map(({ name, size, lastModified, relativePath }) => ({ name, size, lastModified, relativePath })),
       })
+      setPlanMeta(plan)
       setRows(plan.files.map((p) => ({
         srcIdx: p.idx, name: p.relativePath || p.name, blob: p.blobPath,
         status: p.status, error: p.reason || null, sasUrl: p.sasUrl, contentType: p.contentType,
+        stagingBlobPath: p.stagingBlobPath || null,
+        asyncUpload: Boolean(p.asyncUpload),
         include: p.status === 'nuevo', total: files[p.idx]?.size || 0, done: 0,
       })))
     } catch (e) { setMsg({ ok: false, text: `Error al analizar: ${e.message}` }) }
@@ -307,6 +311,7 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
     }, 500)
 
     let ok = 0, fail = 0
+    const uploaded = []
     const queue = [...todo]
     const worker = async () => {
       while (queue.length) {
@@ -321,6 +326,7 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
           })
           ok++; loadedRef.current[row.blob] = src.size
           patch(row.blob, { status: 'ok', done: src.size })
+          uploaded.push(row)
           setStats(s => s && { ...s, ok: s.ok + 1 })
         } catch (e) {
           fail++; patch(row.blob, { status: 'error', error: e.message })
@@ -332,8 +338,25 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
     clearInterval(timer)
     const doneBytes = Object.values(loadedRef.current).reduce((a, b) => a + b, 0)
     setStats(s => (s ? { ...s, doneBytes, etaSec: 0, speed: 0, done: true } : s))
-    if (refreshIndex && ok > 0) { try { await api.refreshIndex() } catch { /* índice nocturno lo cubre */ } }
-    setMsg({ ok: fail === 0, text: `Listo: ${ok} subido${ok !== 1 ? 's' : ''}${fail ? `, ${fail} con error` : ''}.` })
+    let jobMessage = ''
+    // Files staged in an earlier attempt (status 'ok', not retried now) belong
+    // to the same batch: without them a retry after a failure strands them in staging.
+    const staged = [...rows.filter(r => r.status === 'ok' && r.stagingBlobPath), ...uploaded]
+    if (fail === 0 && staged.length && planMeta?.asyncUpload) {
+      try {
+        // The backend builds the job from its saved plan; only the batch is named here.
+        const job = await api.postUploadLocalFinalize({ batchId: planMeta.batchId })
+        staged.forEach(row => patch(row.blob, { status: 'queued', error: null }))
+        jobMessage = ` Procesamiento MIA en cola (${job.jobId}).`
+      } catch (e) {
+        fail = staged.length
+        jobMessage = ` No se pudo crear el job MIA: ${e.message}`
+      }
+    } else if (refreshIndex && ok > 0) {
+      try { await api.refreshIndex() } catch { /* índice nocturno lo cubre */ }
+    }
+    const asyncText = planMeta?.asyncUpload && !fail ? ' La página ya puede cerrarse.' : ''
+    setMsg({ ok: fail === 0, text: `Listo: ${ok} subido${ok !== 1 ? 's' : ''}${fail ? `, ${fail} con error` : ''}.${jobMessage}${asyncText}` })
     setBusy(false)
   }
 
@@ -357,7 +380,9 @@ function LocalSource({ projectCode, projectName, prefijo, subfolder, keepNames, 
         <input type="checkbox" checked={keepNames} onChange={e => { setKeepNames(e.target.checked); setRows([]) }} />
         Mantener nombres y carpetas originales (sin prefijo ni fechas)
       </label>
-      <p className="up-hint">Van directo de tu equipo al almacenamiento en bloques de 32 MB con reintentos: los videos de varias GB no dependen del timeout del servidor. No cierres la pestaña hasta que termine.</p>
+      <p className="up-hint">{planMeta?.asyncUpload
+        ? 'Primero se suben a staging en bloques de 32 MB; después MIA los mueve al almacenamiento final. Puedes cerrar la página cuando termine la subida.'
+        : 'Van directo de tu equipo al almacenamiento en bloques de 32 MB con reintentos: los videos de varias GB no dependen del timeout del servidor. No cierres la pestaña hasta que termine.'}</p>
 
       <div className="up-pickers">
         <button type="button" className="up-btn-ghost" onClick={analyze} disabled={busy || !files.length}>{busy && !rows.length ? 'Analizando…' : 'Analizar archivos'}</button>
